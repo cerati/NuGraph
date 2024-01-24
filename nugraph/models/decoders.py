@@ -265,6 +265,7 @@ class VertexDecoder(DecoderBase):
         # initialise aggregation function
         self.aggr = nn.ModuleDict()
         aggr_kwargs = {}
+        in_features = node_features
         if aggr == 'lstm':
             aggr_kwargs = {
                 'in_channels': in_features,
