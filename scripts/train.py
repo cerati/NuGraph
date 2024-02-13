@@ -47,6 +47,7 @@ def train(args):
                       vertex_aggr=args.vertex_aggr,
                       vertex_lstm_features=args.vertex_lstm_feats,
                       vertex_mlp_features=args.vertex_mlp_feats,
+                      vertexhitdist_mlp_features=args.vertexhitdist_mlp_feats,
                       planes=nudata.planes,
                       semantic_classes=nudata.semantic_classes,
                       event_classes=nudata.event_classes,
@@ -55,6 +56,7 @@ def train(args):
                       semantic_head=args.semantic,
                       filter_head=args.filter,
                       vertex_head=args.vertex,
+                      vertexhitdist_head=args.vertexhitdist,
                       checkpoint=not args.no_checkpointing,
                       lr=args.learning_rate)
         name = args.name

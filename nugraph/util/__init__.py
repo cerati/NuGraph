@@ -1,6 +1,7 @@
 # __init__.py
 from .RecallLoss import RecallLoss
 from .LogCoshLoss import LogCoshLoss
+from .LogMSELoss import LogMSELoss
 from .ObjCondensationLoss import ObjCondensationLoss
 from .PositionFeatures import PositionFeatures
 from .FeatureNorm import FeatureNorm, FeatureNormMetric
