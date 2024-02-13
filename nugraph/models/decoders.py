@@ -2,7 +2,7 @@ from typing import Any, Callable
 
 from abc import ABC
 
-from torch import Tensor, tensor, cat
+from torch import Tensor, tensor, cat, logical_and
 import torch.nn as nn
 from torch_geometric.nn.aggr import SoftmaxAggregation, LSTMAggregation
 from torch_geometric.nn.resolver import aggregation_resolver as aggr_resolver
@@ -14,7 +14,7 @@ import seaborn as sn
 import math
 
 from .linear import ClassLinear
-from ..util import RecallLoss, LogCoshLoss, ObjCondensationLoss
+from ..util import RecallLoss, LogCoshLoss, ObjCondensationLoss, LogMSELoss
 
 class DecoderBase(nn.Module, ABC):
     '''Base class for all NuGraph decoders'''
@@ -295,7 +295,13 @@ class VertexDecoder(DecoderBase):
         return x, y
 
     def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
-        xyz = (x-y).abs().mean(dim=0)
+        mask = y[:,0]>0
+        mask = logical_and(mask,y[:,0]<255)
+        mask = logical_and(mask,y[:,1]>-116)
+        mask = logical_and(mask,y[:,1]<116)
+        mask = logical_and(mask,y[:,2]>10)
+        mask = logical_and(mask,y[:,2]<1036)
+        xyz = (x[mask]-y[mask]).abs().mean(dim=0)
         return {
             f'vertex-resolution-x/{stage}': xyz[0],
             f'vertex-resolution-y/{stage}': xyz[1],
@@ -337,3 +343,40 @@ class InstanceDecoder(DecoderBase):
         acc = self.acc_func(predictions, y)
         metrics[f'{self.name}_accuracy/{stage}'] = accuracy
         return metrics
+
+class VertexHitDistanceDecoder(DecoderBase):
+    def __init__(self,
+                 node_features: int,
+                 mlp_features: int,
+                 planes: list[str],
+                 semantic_classes: list[str]
+                ):
+        super().__init__('vertexhitdist',
+                         planes,
+                         semantic_classes,
+                         LogMSELoss(),
+                         weight=1.)
+
+        self.net = nn.ModuleDict()
+        for p in planes:
+            self.net[p] = nn.Sequential(
+                nn.Linear(node_features, mlp_features),
+                nn.ReLU(),
+                nn.Linear(mlp_features, 1)
+            )
+
+    def forward(self, x: dict[str, Tensor],
+                batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
+        return { 'x_vtxd': { p: self.net[p](x[p]).squeeze(dim=-1) for p in self.planes }}
+
+    def arrange(self, batch) -> tuple[Tensor, Tensor]:
+        x = cat([batch[p].x_vtxd for p in self.planes], dim=0)
+        y = cat([batch[p].y_vtxd for p in self.planes], dim=0)
+        return x, y
+
+    def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
+        #fixme: add mask
+        diff = x-y
+        return {
+            f'vertex-hit-distance-resolution/{stage}': diff.square().mean().sqrt()
+        }

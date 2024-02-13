@@ -13,7 +13,7 @@ from torch_geometric.utils import unbatch
 from .encoder import Encoder
 from .plane import PlaneNet
 from .nexus import NexusNet
-from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder
+from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, VertexHitDistanceDecoder
 
 class NuGraph2(LightningModule):
     """PyTorch Lightning module for model training.
@@ -27,6 +27,7 @@ class NuGraph2(LightningModule):
                  vertex_aggr: str = 'lstm',
                  vertex_lstm_features: int = 64,
                  vertex_mlp_features: list[int] = [ 64 ],
+                 vertexhitdist_mlp_features: int = 16,
                  planes: list[str] = ['u','v','y'],
                  semantic_classes: list[str] = ['MIP','HIP','shower','michel','diffuse'],
                  event_classes: list[str] = ['numu','nue','nc'],
@@ -35,6 +36,7 @@ class NuGraph2(LightningModule):
                  semantic_head: bool = True,
                  filter_head: bool = True,
                  vertex_head: bool = False,
+                 vertexhitdist_head: bool = False,
                  checkpoint: bool = False,
                  lr: float = 0.001):
         super().__init__()
@@ -89,7 +91,7 @@ class NuGraph2(LightningModule):
                 planes,
                 semantic_classes)
             self.decoders.append(self.filter_decoder)
-            
+
         if vertex_head:
             self.vertex_decoder = VertexDecoder(
                 planar_features,
@@ -99,6 +101,14 @@ class NuGraph2(LightningModule):
                 planes,
                 semantic_classes)
             self.decoders.append(self.vertex_decoder)
+
+        if vertexhitdist_head:
+            self.vertexhitdist_decoder = VertexHitDistanceDecoder(
+                planar_features,
+                vertexhitdist_mlp_features,
+                planes,
+                semantic_classes)
+            self.decoders.append(self.vertexhitdist_decoder)
 
         if len(self.decoders) == 0:
             raise Exception('At least one decoder head must be enabled!')
@@ -272,6 +282,8 @@ class NuGraph2(LightningModule):
                            help='Hidden dimensionality of vertex LSTM aggregation')
         model.add_argument('--vertex-mlp-feats', type=int, nargs='*', default=[32],
                            help='Hidden dimensionality of vertex decoder')
+        model.add_argument('--vertexhitdist-mlp-feats', type=int, default=16,
+                           help='Hidden dimensionality of vertex-hit distance decoder')
         model.add_argument('--event', action='store_true', default=False,
                            help='Enable event classification head')
         model.add_argument('--semantic', action='store_true', default=False,
@@ -280,6 +292,8 @@ class NuGraph2(LightningModule):
                            help='Enable background filter head')
         model.add_argument('--vertex', action='store_true', default=False,
                            help='Enable vertex regression head')
+        model.add_argument('--vertexhitdist', action='store_true', default=False,
+                           help='Enable vertex-hit distance regression head')
         return parser
 
     @staticmethod
