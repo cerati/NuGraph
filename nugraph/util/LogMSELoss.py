@@ -11,4 +11,4 @@ class LogMSELoss(torch.nn.Module):
         assert input.ndim == 1
          #fixme: add mask
         x = (input - target).square()
-        return torch.log(x).mean()
+        return torch.log(1+x).mean()
