@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -J exatrkx_process
-#SBATCH -p cpu_gce
+#SBATCH -p wc_cpu
 #SBATCH -t 240
 #SBATCH -n 64
 #SBATCH -A fwk

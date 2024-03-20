@@ -34,6 +34,7 @@ def test(args):
 
     accelerator, devices = ng.util.configure_device()
     trainer = pl.Trainer(accelerator=accelerator, devices=devices,
+                         limit_predict_batches=1,
                          logger=False)
     plot = pynuml.plot.GraphPlot(planes=nudata.planes,
                                  classes=nudata.semantic_classes)
@@ -48,7 +49,9 @@ def test(args):
     df = []
     for ib, batch in enumerate(tqdm.tqdm(out)):
         for data in batch.to_data_list():
-            df.append(plot.to_dataframe(data))
+            #print(plot.to_dataframe(data))
+            #print(plot.to_dataframe_evt(data))
+            df.append(plot.to_dataframe_evt(data))
     df = pd.concat(df)
     df.to_hdf(args.outfile, 'hits', format='table')
 
