@@ -2,9 +2,9 @@ from typing import Any, Callable
 
 from abc import ABC
 
-from torch import Tensor, tensor, cat, logical_and
+from torch import Tensor, tensor, cat, logical_and, tanh
 import torch.nn as nn
-from torch_geometric.nn.aggr import SoftmaxAggregation, LSTMAggregation
+from torch_geometric.nn.aggr import SoftmaxAggregation, LSTMAggregation, AttentionalAggregation
 from torch_geometric.nn.resolver import aggregation_resolver as aggr_resolver
 
 import torchmetrics as tm
@@ -14,7 +14,7 @@ import seaborn as sn
 import math
 
 from .linear import ClassLinear
-from ..util import RecallLoss, LogCoshLoss, ObjCondensationLoss, LogMSELoss
+from ..util import RecallLoss, LogCoshLoss, ObjCondensationLoss, LogMSELoss, YWeightMSELoss
 
 class DecoderBase(nn.Module, ABC):
     '''Base class for all NuGraph decoders'''
@@ -272,6 +272,15 @@ class VertexDecoder(DecoderBase):
                 'out_channels': lstm_features,
             }
             in_features = lstm_features
+        elif aggr == 'attn':
+            # AttentionalAggregation needs to specify gate_nn
+            # Currently gate_nn is a simple gate neural network with 3 layers
+            gate_nn = nn.Sequential(
+                nn.Linear(in_features=in_features, out_features=64),
+                nn.ReLU(),
+                nn.Linear(in_features=64, out_features=1))  # Output shape will be [-1, 1]
+            aggr = AttentionalAggregation(gate_nn = gate_nn)
+
         for p in self.planes:
             self.aggr[p] = aggr_resolver(aggr, **(aggr_kwargs or {}))
 
@@ -354,8 +363,10 @@ class VertexHitDistanceDecoder(DecoderBase):
         super().__init__('vertexhitdist',
                          planes,
                          semantic_classes,
-                         LogMSELoss(),
-                         weight=1.)
+                         #YWeightMSELoss(),
+                         nn.MSELoss(),
+                         weight=1.,
+                         temperature=1.)
 
         self.net = nn.ModuleDict()
         for p in planes:
@@ -372,7 +383,7 @@ class VertexHitDistanceDecoder(DecoderBase):
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
         x = cat([batch[p].x_vtxd for p in self.planes], dim=0)
         y = cat([batch[p].y_vtxd for p in self.planes], dim=0)
-        return x, y
+        return x, 10.*tanh(y/10.)
 
     def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
         #fixme: add mask

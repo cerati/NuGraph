@@ -133,15 +133,20 @@ class H5DataModule(LightningDataModule):
                                 batch_size=batch_size)
 
             print('  generating feature norm...')
-            metrics = None
+            metrics = { p: None for p in planes }
             for batch in tqdm.tqdm(loader):
                 for p in planes:
-                    if not metrics:
+                    if metrics[p] is None:
                         num_feats = batch[p].x.shape[-1]
-                        metrics = { p: FeatureNormMetric(num_feats) for p in planes }
+                        metrics[p] = FeatureNormMetric(num_feats)
+                        #print(metrics[p])
+                    #print(metrics[p])
                     metrics[p].update(batch[p].x)
+            #print(metrics)
             for p in planes:
                 key = f'norm/{p}'
+                #print(metrics[p])
+                #print(f[key])
                 if key in f:
                     del f[key]
                 f[key] = metrics[p].compute()
