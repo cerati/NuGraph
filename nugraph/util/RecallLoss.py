@@ -11,6 +11,7 @@ class RecallLoss(torch.nn.Module):
         self.ignore_index = ignore_index
 
     def forward(self, input: Tensor, target: Tensor) -> Tensor:
+        target[target == 5] = -1
         weight = 1 - recall(input, target, 'multiclass',
                             num_classes=input.size(1),
                             average='none',
