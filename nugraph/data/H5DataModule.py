@@ -12,7 +12,7 @@ from torch_geometric.transforms import Compose
 from pytorch_lightning import LightningDataModule
 
 from ..data import H5Dataset, BalanceSampler
-from ..util import PositionFeatures, FeatureNormMetric, FeatureNorm, HierarchicalEdges, EventLabels
+from ..util import PositionFeatures, FeatureNormMetric, FeatureNorm, HierarchicalEdges, EventLabels, FeatureExtension
 
 class H5DataModule(LightningDataModule):
     """PyTorch Lightning data module for neutrino graph data."""
@@ -80,6 +80,7 @@ class H5DataModule(LightningDataModule):
         transform = Compose((PositionFeatures(self.planes),
                              FeatureNorm(self.planes, norm),
                              HierarchicalEdges(self.planes),
+                             FeatureExtension.FeatureExtension(self.planes),
                              EventLabels()))
 
         self.train_dataset = H5Dataset(self.filename, train_samples, transform)
