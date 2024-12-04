@@ -1,23 +1,19 @@
-#!/usr/bin/env python
+!/usr/bin/env python                                                                                                                                     
 
 import os
 import argparse
-import pathlib
-import signal
-import warnings
-
 import torch
 import pytorch_lightning as pl
 from pytorch_lightning.plugins.environments import SLURMEnvironment
-from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.callbacks import LearningRateMonitor
 import nugraph as ng
+import signal
 
-torch.set_num_threads(4)
-
+import warnings
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
 
 Data = ng.data.H5DataModule
-Model = ng.models.NuGraph3
+Model = ng.models.NuGraph2
 
 def configure():
     parser = argparse.ArgumentParser()
@@ -25,46 +21,50 @@ def configure():
                         help='Training instance name, for logging purposes')
     parser.add_argument('--version', type=str, default=None,
                         help='Training version name, for logging purposes')
-    parser.add_argument("--project", type=str, default="nugraph3",
-                        help="wandb project to log to")
-    parser.add_argument("--offline", action="store_true",
-                        help="write wandb logs offline")
+    parser.add_argument('--logdir', type=str, default=None,
+                        help='Output directory to write logs to')
+    parser.add_argument('--resume', type=str, default=None,
+                        help='Checkpoint file to resume training from')
     parser.add_argument('--profiler', type=str, default=None,
                         help='Enable requested profiler')
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
     return parser.parse_args()
-
+    
 def train(args):
 
     torch.manual_seed(1)
 
-    # Load dataset
-    nudata = Data(args.data_path, batch_size=args.batch_size, 
+    # Load dataset                                                                                                                                        
+    nudata = Data(args.data_path, batch_size=args.batch_size,
                   shuffle=args.shuffle, balance_frac=args.balance_frac)
 
-    model = Model.from_args(args, nudata)
+    if args.name is not None and args.logdir is not None and args.resume is None:
+        model = Model.from_args(args, nudata)
+        name = args.name
+        logdir = args.logdir
+        version = args.version
+        os.makedirs(os.path.join(logdir, args.name), exist_ok=True)
+    elif args.resume is not None and args.name is None and args.logdir is None:
+        model = Model.load_from_checkpoint(args.resume)
+        stub = os.path.dirname(os.path.dirname(args.resume))
+        stub, version = os.path.split(stub)
+        logdir, name = os.path.split(stub)
+    else:
+        raise Exception('You must pass either the --name and --logdir arguments to start an existing training, or the --resume argument to resume an exis\
+ting one.')
+        
+    logger = pl.loggers.TensorBoardLogger(save_dir=logdir,
+                                          name=name, version=version,
+                                          default_hp_metric=False)
 
-    logdir = pathlib.Path(os.environ["NUGRAPH_LOG"])/args.name
-    logdir.mkdir(parents=True, exist_ok=True)
-    log_model = False if args.offline else "all"
-    logger = pl.loggers.WandbLogger(save_dir=logdir, project=args.project,
-                                    name=args.name, version=args.version,
-                                    log_model=log_model, offline=args.offline)
+    callbacks = [
+        LearningRateMonitor(logging_interval='step'),
+    ]
 
-    # configure callbacks
-    callbacks = []
-    if logger:
-        callbacks.append(LearningRateMonitor(logging_interval='step'))
-    if isinstance(logger, pl.loggers.WandbLogger) and not args.offline:
-        callbacks.append(ModelCheckpoint(monitor="loss/val", mode="min"))
-
-    # configure plugins
     plugins = [
         SLURMEnvironment(requeue_signal=signal.SIGUSR1),
     ]
-
-    model = Model.from_args(args, nudata)
 
     accelerator, devices = ng.util.configure_device()
     trainer = pl.Trainer(accelerator=accelerator, devices=devices,
@@ -74,7 +74,7 @@ def train(args):
                          logger=logger, profiler=args.profiler,
                          callbacks=callbacks, plugins=plugins)
 
-    trainer.fit(model, datamodule=nudata)
+    trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
     trainer.test(datamodule=nudata)
 
 if __name__ == '__main__':
