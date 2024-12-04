@@ -76,7 +76,10 @@ class HitGraphProducer(ProcessorBase):
             event = evt['event_table'].squeeze()
 
         hits = evt['hit_table']
-        spacepoints = evt['spacepoint_table'].reset_index(drop=True)
+        spacepoints = evt['spacepoint_table'].query('Chi_squared<=0.5').reset_index(drop=True)#applies a chi2 filter                                      
+        # discard any events with less than 3 spacepoints                                                                                                 
+        if len(spacepoints)<3:
+            return evt.name, None
 
         # discard any events with pathologically large hit integrals
         # this is a hotfix that should be removed once the dataset is fixed
@@ -206,6 +209,7 @@ class HitGraphProducer(ProcessorBase):
         # truth information
         if self.semantic_labeller:
             data["hit"].y_semantic = torch.tensor(hits['semantic_label'].fillna(-1).values).long()
+            data[p].y_semantic[data[p].y_semantic > 4] = -1
             data["hit"].y_instance = torch.tensor(hits['instance_label'].fillna(-1).values).long()
             if self.store_detailed_truth:
                 data["hit"].g4_id = torch.tensor(hits['g4_id'].fillna(-1).values).long()
