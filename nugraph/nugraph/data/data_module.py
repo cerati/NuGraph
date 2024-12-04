@@ -84,9 +84,9 @@ class NuGraphDataModule(LightningDataModule):
                 sys.exit()
 
         transform = Compose((PositionFeatures(self.planes),
-                             FeatureNorm(self.planes, norm),
-                             HierarchicalEdges(self.planes),
-                             EventLabels()))
+                             FeatureNorm(self.planes, norm)))
+                             #HierarchicalEdges(self.planes))),                                                                                           
+                             #EventLabels()))#HierarchicalEdges and EventLabels only in Nugraph3 
 
         self.train_dataset = NuGraphDataset(self.filename, train_samples, transform)
         self.val_dataset = NuGraphDataset(self.filename, val_samples, transform)
