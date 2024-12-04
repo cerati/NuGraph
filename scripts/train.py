@@ -1,4 +1,4 @@
-!/usr/bin/env python                                                                                                                                     
+#!/usr/bin/env python
 
 import os
 import argparse
@@ -30,13 +30,13 @@ def configure():
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
     return parser.parse_args()
-    
+
 def train(args):
 
     torch.manual_seed(1)
 
-    # Load dataset                                                                                                                                        
-    nudata = Data(args.data_path, batch_size=args.batch_size,
+    # Load dataset
+    nudata = Data(args.data_path, batch_size=args.batch_size, 
                   shuffle=args.shuffle, balance_frac=args.balance_frac)
 
     if args.name is not None and args.logdir is not None and args.resume is None:
