@@ -15,7 +15,7 @@ import warnings
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
 
 Data = ng.data.H5DataModule
-Model = ng.models.NuGraph3
+Model = ng.models.NuGraph2
 
 def configure():
     parser = argparse.ArgumentParser()
@@ -55,7 +55,10 @@ def train(args):
     else:
         raise Exception('You must pass either the --name and --logdir arguments to start an existing training, or the --resume argument to resume an existing one.')
 
-    logger = pl.loggers.WandbLogger(save_dir=logdir, project=name, name=version)
+    # logger = pl.loggers.WandbLogger(save_dir=logdir, project=name, name=version)
+    logger = pl.loggers.TensorBoardLogger(save_dir=logdir,
+                                          name=name, version=version,
+                                          default_hp_metric=False)
 
     callbacks = [
         LearningRateMonitor(logging_interval='step'),
