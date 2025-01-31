@@ -11,6 +11,9 @@ class FeatureExtension(BaseTransform):
     def __call__(self, data: "pyg.data.HeteroData") -> "pyg.data.HeteroData":
 
         for p in self.planes:
+            if bool(data[p]):
+                data[p].x = torch.empty(0, 8)
+                continue
             ## Adding delta wire an delta time (dwire/dtime doesn't work; some infs)
             # Extracting wire and time information
             wt_coords = stack((data.collect("pos")[p][:, 0], data.collect("pos")[p][:, 1]), dim=1) # [wire, time]
