@@ -17,7 +17,7 @@ torch.set_num_threads(4)
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
 
 Data = ng.data.H5DataModule
-Model = ng.models.NuGraph3
+Model = ng.models.NuGraph2
 
 def configure():
     parser = argparse.ArgumentParser()
@@ -49,10 +49,13 @@ def train(args):
 
     logdir = pathlib.Path(os.environ["NUGRAPH_LOG"])/args.name
     logdir.mkdir(parents=True, exist_ok=True)
-    log_model = False if args.offline else "all"
-    logger = pl.loggers.WandbLogger(save_dir=logdir, project=args.project,
-                                    name=args.name, version=args.version,
-                                    log_model=log_model, offline=args.offline)
+    #log_model = False if args.offline else "all"
+    #logger = pl.loggers.WandbLogger(save_dir=logdir, project=args.project,
+    #                                name=args.name, version=args.version,
+    #                                log_model=log_model, offline=args.offline)
+    logger = pl.loggers.TensorBoardLogger(save_dir=logdir,
+                                          name=args.name, version=args.version,
+                                          default_hp_metric=False)
 
     # configure callbacks
     callbacks = []

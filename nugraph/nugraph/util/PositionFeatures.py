@@ -10,4 +10,5 @@ class PositionFeatures(BaseTransform):
     def __call__(self, data: 'pyg.data.HeteroData') -> 'pyg.data.HeteroData':
         for p in self.planes:
             data[p].x = cat((data[p].pos, data[p].x), dim=-1)
+            del data[p].y_instance
         return data
