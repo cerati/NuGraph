@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH -A m4599_g
 #SBATCH -C gpu
-#SBATCH -q regular
-#SBATCH -t 48:00:00
+#SBATCH -q debug
+#SBATCH -t 0:30:00
 #SBATCH -N 1
 #SBATCH --ntasks-per-node=4
 #SBATCH -c 32

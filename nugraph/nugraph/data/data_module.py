@@ -13,7 +13,7 @@ from torch_geometric.transforms import Compose
 from pytorch_lightning import LightningDataModule
 
 from ..data import NuGraphDataset, BalanceSampler
-from ..util import PositionFeatures, FeatureNormMetric, FeatureNorm, HierarchicalEdges, EventLabels
+from ..util import PositionFeatures, FeatureNormMetric, FeatureNorm, FeatureExtension, HierarchicalEdges, EventLabels
 
 DEFAULT_DATA = ("$NUGRAPH_DATA/uboone-opendata/"
                 "uboone-opendata-19be46d89d0f22f5a78641d724c1fedd.gnn.h5")
@@ -84,7 +84,8 @@ class NuGraphDataModule(LightningDataModule):
                 sys.exit()
 
         transform = Compose((PositionFeatures(self.planes),
-                             FeatureNorm(self.planes, norm)#,
+                             FeatureNorm(self.planes, norm),
+                             FeatureExtension.FeatureExtension(self.planes)
                              #HierarchicalEdges(self.planes),
                              #EventLabels()
                              ))

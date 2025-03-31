@@ -176,8 +176,8 @@ class NuGraph2(LightningModule):
         for decoder in self.decoders:
             loss, metrics = decoder.loss(batch, 'val', True)
             total_loss += loss
-            self.log_dict(metrics, batch_size=batch.num_graphs)
-        self.log('loss/val', total_loss, batch_size=batch.num_graphs)
+            self.log_dict(metrics, batch_size=batch.num_graphs, sync_dist=True)
+        self.log('loss/val', total_loss, batch_size=batch.num_graphs, sync_dist=True)
 
     def on_validation_epoch_end(self) -> None:
         epoch = self.trainer.current_epoch + 1
@@ -192,8 +192,8 @@ class NuGraph2(LightningModule):
         for decoder in self.decoders:
             loss, metrics = decoder.loss(batch, 'test', True)
             total_loss += loss
-            self.log_dict(metrics, batch_size=batch.num_graphs)
-        self.log('loss/test', total_loss, batch_size=batch.num_graphs)
+            self.log_dict(metrics, batch_size=batch.num_graphs, sync_dist=True)
+        self.log('loss/test', total_loss, batch_size=batch.num_graphs, sync_dist=True)
         self.log_memory(batch, 'test')
 
     def on_test_epoch_end(self) -> None:
