@@ -10,6 +10,7 @@ class RecallLoss(torch.nn.Module):
         super().__init__()
         self.ignore_index = ignore_index
 
+    @torch.jit.unused
     def forward(self, input: Tensor, target: Tensor) -> Tensor:
         target[target == 5] = -1
         weight = 1 - recall(input, target, 'multiclass',

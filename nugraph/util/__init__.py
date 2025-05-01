@@ -7,4 +7,4 @@ from .DropRMS import DropRMS
 from .FeatureNorm import FeatureNorm, FeatureNormMetric
 from .hierarchical_edges import HierarchicalEdges
 from .event_labels import EventLabels
-from .scriptutils import configure_device
+#from .scriptutils import configure_device

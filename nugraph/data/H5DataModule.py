@@ -78,10 +78,11 @@ class H5DataModule(LightningDataModule):
                 sys.exit()
 
         transform = Compose((PositionFeatures(self.planes),
-                             FeatureNorm(self.planes, norm),
-                             HierarchicalEdges(self.planes),
-                             FeatureExtension.FeatureExtension(self.planes),
-                             EventLabels()))
+                             FeatureNorm(self.planes, norm)#,
+                             #HierarchicalEdges(self.planes),
+                             #FeatureExtension.FeatureExtension(self.planes),
+                             #EventLabels()
+                            ))
 
         self.train_dataset = H5Dataset(self.filename, train_samples, transform)
         self.val_dataset = H5Dataset(self.filename, val_samples, transform)

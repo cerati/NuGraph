@@ -61,21 +61,25 @@ class NuGraph2(LightningModule):
                                   planes,
                                   checkpoint=checkpoint)
 
-        self.decoders = []
+        self.semantic_decoder = SemanticDecoder(planar_features, planes, semantic_classes)
+        self.filter_decoder = FilterDecoder(planar_features, planes, semantic_classes)
+        self.decoders: List[Union[SemanticDecoder,FilterDecoder]] = [self.semantic_decoder,self.filter_decoder]
 
-        if semantic_head:
-            self.semantic_decoder = SemanticDecoder(
-                planar_features,
-                planes,
-                semantic_classes)
-            self.decoders.append(self.semantic_decoder)
-
-        if filter_head:
-            self.filter_decoder = FilterDecoder(
-                planar_features,
-                planes,
-                semantic_classes)
-            self.decoders.append(self.filter_decoder)
+        #self.decoders = []
+        #
+        #if semantic_head:
+        #    self.semantic_decoder = SemanticDecoder(
+        #        planar_features,
+        #        planes,
+        #        semantic_classes)
+        #    self.decoders.append(self.semantic_decoder)
+        #
+        #if filter_head:
+        #    self.filter_decoder = FilterDecoder(
+        #        planar_features,
+        #        planes,
+        #        semantic_classes)
+        #    self.decoders.append(self.filter_decoder)
 
         if len(self.decoders) == 0:
             raise Exception('At least one decoder head must be enabled!')
@@ -85,8 +89,35 @@ class NuGraph2(LightningModule):
                 edge_index_plane: dict[str, Tensor],
                 edge_index_nexus: dict[str, Tensor],
                 nexus: Tensor,
-                batch: dict[str, Tensor]) -> dict[str, Tensor]:
+                batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
+        #print(x)
+        # feature extension -- can't work, need to figure out how to access "pos" here... maybe only way is to undo
+        #for p in self.planes:
+        #    # Adding delta wire an delta time (dwire/dtime doesn't work; some infs)
+        #    # Extracting wire and time information
+        #    wt_coords = stack((data.collect("pos")[p][:, 0], data.collect("pos")[p][:, 1]), dim=1) # [wire, time]
+        #    # Calculating pairwise euclidean distances of nodes in the wire vs time space
+        #    dist_table = norm(wt_coords[:, None, :] - wt_coords[None, :, :], dim=-1)
+        #    dist_table.fill_diagonal_(float('inf'))
+        #    # Find a (n_nodes, 2) matrix containing the distances and indexes of the two closest nodes to each node
+        #    dists_2closest_nodes, idxs_2closest_nodes = topk(dist_table, 2, dim=1, largest=False, sorted=True)
+        #    # Finding the ratio of the wire and time differences of the two closest neighbors
+        #    # Double delta (Giuseppe suggestion)
+        #    dwire = (2*wt_coords[:, 0] - wt_coords[idxs_2closest_nodes[:,1], 0] - wt_coords[idxs_2closest_nodes[:,0], 0]).view(-1,1)
+        #    dtime = (2*wt_coords[:, 1] - wt_coords[idxs_2closest_nodes[:,1], 1] - wt_coords[idxs_2closest_nodes[:,0], 1]).view(-1,1)
+        #    ## Adding node degree
+        #    nodes_degree = torch.unique(data[p, 'plane', p].edge_index[0], sorted=True, return_counts=True)[1].view(-1,1)
+        #    nodes_degree = log(nodes_degree) # Should I use log(nodes_degree) instead?
+        #    # Extending the original node feature matrix with the new features
+        #    data[p].x = cat((data[p].x, dwire, dtime, nodes_degree), dim=-1)
+        #
+        # drop RMS, i.e. column index 3
+        for p in self.planes:
+            column_index_to_drop = 3
+            x[p] = torch.cat((x[p][:, :column_index_to_drop], x[p][:, column_index_to_drop+1:]), dim=1)
+        #print(x)
         m = self.encoder(x)
+        #print(m)
         for _ in range(self.num_iters):
             # shortcut connect features
             for i, p in enumerate(self.planes):
@@ -94,9 +125,12 @@ class NuGraph2(LightningModule):
                 m[p] = torch.cat((m[p], s), dim=-1)
             self.plane_net(m, edge_index_plane)
             self.nexus_net(m, edge_index_nexus, nexus)
-        ret = {}
-        for decoder in self.decoders:
-            ret.update(decoder(m, batch))
+        #ret = {}
+        #for decoder in self.decoders:
+        #    ret.update(decoder(m, batch))
+        ret: dict[str, dict[str, Tensor]] = {}
+        ret.update(self.semantic_decoder(m, batch))
+        ret.update(self.filter_decoder(m, batch))
         return ret
 
     def step(self, data: HeteroData | Batch):
