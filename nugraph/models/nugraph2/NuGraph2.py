@@ -3,7 +3,7 @@ import warnings
 import psutil
 
 import torch
-from torch import Tensor, cat, empty
+from torch import Tensor, cat, empty, norm, topk, stack, log
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
 from pytorch_lightning import LightningModule
@@ -91,30 +91,50 @@ class NuGraph2(LightningModule):
                 nexus: Tensor,
                 batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
         #print(x)
-        # feature extension -- can't work, need to figure out how to access "pos" here... maybe only way is to undo
-        #for p in self.planes:
-        #    # Adding delta wire an delta time (dwire/dtime doesn't work; some infs)
-        #    # Extracting wire and time information
-        #    wt_coords = stack((data.collect("pos")[p][:, 0], data.collect("pos")[p][:, 1]), dim=1) # [wire, time]
-        #    # Calculating pairwise euclidean distances of nodes in the wire vs time space
-        #    dist_table = norm(wt_coords[:, None, :] - wt_coords[None, :, :], dim=-1)
-        #    dist_table.fill_diagonal_(float('inf'))
-        #    # Find a (n_nodes, 2) matrix containing the distances and indexes of the two closest nodes to each node
-        #    dists_2closest_nodes, idxs_2closest_nodes = topk(dist_table, 2, dim=1, largest=False, sorted=True)
-        #    # Finding the ratio of the wire and time differences of the two closest neighbors
-        #    # Double delta (Giuseppe suggestion)
-        #    dwire = (2*wt_coords[:, 0] - wt_coords[idxs_2closest_nodes[:,1], 0] - wt_coords[idxs_2closest_nodes[:,0], 0]).view(-1,1)
-        #    dtime = (2*wt_coords[:, 1] - wt_coords[idxs_2closest_nodes[:,1], 1] - wt_coords[idxs_2closest_nodes[:,0], 1]).view(-1,1)
-        #    ## Adding node degree
-        #    nodes_degree = torch.unique(data[p, 'plane', p].edge_index[0], sorted=True, return_counts=True)[1].view(-1,1)
-        #    nodes_degree = log(nodes_degree) # Should I use log(nodes_degree) instead?
-        #    # Extending the original node feature matrix with the new features
-        #    data[p].x = cat((data[p].x, dwire, dtime, nodes_degree), dim=-1)
+        #print(edge_index_plane)
+        # need to undo norm
+        # sample: /exp/icarus/data/users/cerati/NuGraph/icarus-mpvmpr-new-00-04.gnn.h5
+        #normf = {'u': torch.tensor([[166.21169  , 178.42711  , 276.38657  ,   3.9433618], [ 77.15124  ,  64.01552  , 290.06683  ,   1.3364509]], dtype=torch.float32),
+        #         'v': torch.tensor([[1264.9119   ,  177.53986  ,  330.69482  ,    4.4075446], [ 249.62796  ,   63.493645 ,  323.87247  ,    1.473314 ]], dtype=torch.float32),
+        #         'y': torch.tensor([[1256.1769   ,  180.19048  ,  321.59045  ,    4.3928657], [ 257.89337  ,   63.59527  ,  316.3936   ,    1.4808525]], dtype=torch.float32)}
+        # sample: /exp/icarus/data/users/shseo/NuGraphH5-BNB-merge/mpvmpr_bnb_numu_cos.gnn.h5
+        normf = {'u': torch.tensor([[168.04594  , 178.3245   , 266.6149   ,   3.857218 ], [ 82.80644  ,  67.60649  , 274.32666  ,   1.2912455]], dtype=torch.float32),
+                 'v': torch.tensor([[1245.3547   ,  176.54117  ,  323.52786  ,    4.3267984], [ 293.06314  ,   66.8194   ,  322.11386  ,    1.4249923]], dtype=torch.float32),
+                 'y': torch.tensor([[1225.5012   ,  183.58075  ,  310.83493  ,    4.3409133], [ 307.1943   ,   67.063324 ,  312.461    ,    1.4532351]], dtype=torch.float32)}
+        # feature extension
+        for p in self.planes:
+            #print(p)
+            #print(x[p].size())
+            # Adding delta wire an delta time (dwire/dtime doesn't work; some infs)
+            # Extracting wire and time information
+            wt_coords = stack((x[p][:, 0]*normf[p][1][0]+normf[p][0][0], x[p][:, 1]*normf[p][1][1]+normf[p][0][1]), dim=1) # [wire, time], after I normalized them
+            # Calculating pairwise euclidean distances of nodes in the wire vs time space
+            #print('wt_coords',wt_coords.size())
+            #print(wt_coords[:, None, :].size())
+            #print(wt_coords[None, :, :].size())
+            #print('diff=',wt_coords[:, None, :] - wt_coords[None, :, :])
+            dist_table = norm(wt_coords[:, None, :] - wt_coords[None, :, :], dim=-1)
+            #print(dist_table)
+            dist_table.fill_diagonal_(float('inf'))
+            # Find a (n_nodes, 2) matrix containing the distances and indexes of the two closest nodes to each node
+            dists_2closest_nodes, idxs_2closest_nodes = topk(dist_table, 2, dim=1, largest=False, sorted=True)
+            # Finding the ratio of the wire and time differences of the two closest neighbors
+            # Double delta (Giuseppe suggestion)
+            dwire = (2*wt_coords[:, 0] - wt_coords[idxs_2closest_nodes[:,1], 0] - wt_coords[idxs_2closest_nodes[:,0], 0]).view(-1,1)
+            dtime = (2*wt_coords[:, 1] - wt_coords[idxs_2closest_nodes[:,1], 1] - wt_coords[idxs_2closest_nodes[:,0], 1]).view(-1,1)
+            ## Adding shortest edge length
+            #min_dist = dists_2closest_nodes[:,0].view(-1,1) # 'dists_2closest_nodes' is sorted in ascending order
+            ## Adding node degree
+            nodes_degree = torch.unique(edge_index_plane[p][0], sorted=True, return_counts=True)[1].view(-1,1)
+            nodes_degree = log(nodes_degree) # Should I use log(nodes_degree) instead?
+            # Extending the original node feature matrix with the new features
+            x[p] = cat((x[p], dwire, dtime, nodes_degree), dim=-1)
+            #x[p] = cat((x[p], dwire, dtime, nodes_degree, min_dist), dim=-1)
         #
         # drop RMS, i.e. column index 3
-        for p in self.planes:
-            column_index_to_drop = 3
-            x[p] = torch.cat((x[p][:, :column_index_to_drop], x[p][:, column_index_to_drop+1:]), dim=1)
+        #for p in self.planes:
+        #    column_index_to_drop = 3
+        #    x[p] = torch.cat((x[p][:, :column_index_to_drop], x[p][:, column_index_to_drop+1:]), dim=1)
         #print(x)
         m = self.encoder(x)
         #print(m)

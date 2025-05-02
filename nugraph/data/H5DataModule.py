@@ -78,9 +78,9 @@ class H5DataModule(LightningDataModule):
                 sys.exit()
 
         transform = Compose((PositionFeatures(self.planes),
-                             FeatureNorm(self.planes, norm)#,
-                             #HierarchicalEdges(self.planes),
+                             FeatureNorm(self.planes, norm),
                              #FeatureExtension.FeatureExtension(self.planes),
+                             #HierarchicalEdges(self.planes),
                              #EventLabels()
                             ))
 
