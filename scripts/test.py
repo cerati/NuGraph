@@ -9,7 +9,7 @@ import pynuml
 import tqdm
 
 Data = ng.data.H5DataModule
-Model = ng.models.NuGraph3
+Model = ng.models.NuGraph2
 
 def configure():
     parser = argparse.ArgumentParser()
