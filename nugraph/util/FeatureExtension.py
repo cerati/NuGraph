@@ -14,7 +14,7 @@ class FeatureExtension(BaseTransform):
 
             ## Protect against planes with no hits
             if data[p].x.size()[0]==0:
-                data[p].x = torch.empty(0, 7)
+                data[p].x = torch.empty(0, 6)
                 continue
 
             # Adding delta wire an delta time (dwire/dtime doesn't work; some infs)
