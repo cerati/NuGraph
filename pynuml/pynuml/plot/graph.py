@@ -22,7 +22,7 @@ class GraphPlot:
         # which we don't have any power to fix but will presumably
         # be fixed on their end at some point
         warnings.filterwarnings("ignore", ".*The default of observed=False is deprecated and will be changed to True in a future version of pandas.*")
-        self._truth_cols = ( 'g4_id', 'parent_id', 'pdg' )
+        self._truth_cols = ( 'g4_id', 'parent_id', 'pdg', 'from_nu' )
 
     def to_dataframe(self, data: HeteroData):
         def to_categorical(arr):
@@ -32,15 +32,17 @@ class GraphPlot:
         dfs = []
         for p in self._planes:
             plane = data[p].to_dict()
+            print("plane", plane)
             df = pd.DataFrame(plane['id'], columns=['id'])
+            print("df ", df)
             df['plane'] = p
             df[['wire','time']] = plane['pos']
             if "c" in plane:
                 df[["x", "y", "z"]] = plane["c"]
-            df['y_filter'] = plane['y_semantic'] != -1
+            df['y_filter'] = plane['y_filter']
             mask = df.y_filter.values
             df['y_semantic'] = to_categorical(plane['y_semantic'])
-            df['y_instance'] = plane['y_instance'].numpy().astype(str)
+#            df['y_instance'] = plane['y_instance'].numpy().astype(str)
 
             # add detailed truth information if it's available
             for col in self._truth_cols:

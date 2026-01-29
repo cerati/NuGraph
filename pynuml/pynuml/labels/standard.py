@@ -1,5 +1,6 @@
 import pandas as pd
 import particle
+import numpy as np
 
 class StandardLabels:
 
@@ -75,9 +76,23 @@ class StandardLabels:
 
         def walk(part, particles, depth, sl, il):
             def s(part, particles):
-                sl, slc = -1, None
+                sl, slc = -1, None               
                 parent_type = 0 if part.parent_id == 0 else particles.type[part.parent_id]
-
+#                try:
+#                   print("stiamo provando il try")
+#                   print(abs(parent_type)==13 and (part.start_process == 'muMinusCaptureAtRest'))
+#                except ValueError:
+#                   print("psyche : except!")
+#                   print("---------- siamo dentro s---------")
+#                   print("particles\n", particles[particles.g4_id == 1])
+#                   print("parent type")
+#                   print(parent_type)
+# problema con shape per g4_id ridondante - per ora ne prendiamo uno (il primo)
+#                if(hasattr(parent_type, 'shape') and (len(parent_type.shape)>0)):
+#                    if(isinstance(parent_type, np.ndarray)):
+#                        parent_type = parent_type.flat[0]
+#                    else:
+#                        parent_type = parent_type.values[0]
                 def pion_labeler(part, parent_type):
                     sl = self.pion
                     slc = None
@@ -236,7 +251,7 @@ class StandardLabels:
                 "semantic_label": sl,
                 "instance_label": il } ]
             for _, row in particles[(part.g4_id==particles.parent_id)].iterrows():
-                ret += walk(row, particles, depth+1, slc, ilc)
+               ret += walk(row, particles, depth+1, slc, ilc)
             return ret
 
         ret = []

@@ -170,7 +170,9 @@ class FilterDecoder(DecoderBase):
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
         x = cat([batch[p].x_filter for p in self.planes], dim=0)
-        y = cat([(batch[p].y_semantic!=-1).float() for p in self.planes], dim=0)
+        y = cat([batch[p].y_filter for p in self.planes], dim=0)
+#        y = cat([(batch[p].y_semantic!=-1).float() for p in self.planes], dim=0) #in here y_filter is everything not y_semantic = -1
+# remember that all the truth information passed on to the decoders is done in the processing, specifically in hitgraph.py
         return x, y
 
     def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:

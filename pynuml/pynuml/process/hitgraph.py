@@ -26,6 +26,8 @@ class HitGraphProducer(ProcessorBase):
                  lower_bound: int = 20,
                  store_detailed_truth: bool = False):
 
+        #print("__init__ is called")
+
         self.semantic_labeller = semantic_labeller
         self.event_labeller = event_labeller
         self.label_vertex = label_vertex
@@ -66,15 +68,18 @@ class HitGraphProducer(ProcessorBase):
 
     @property
     def metadata(self):
+        print("metadata function in hitgraph.py is called")
         metadata = { 'planes': self.planes }
         if self.semantic_labeller is not None:
             metadata['semantic_classes'] = self.semantic_labeller.labels[:-1]
+        else:
+            print("self.semantic_labeller is apparently NONE")
         if self.event_labeller is not None:
             metadata['event_classes'] = self.event_labeller.labels
         return metadata
 
     def __call__(self, evt: 'pynuml.io.Event') -> tuple[str, Any]:
-
+        #print("__call__ is called (should pass through all events and thus 36814 entries (as in evt.h5)")
         if self.event_labeller or self.label_vertex:
             event = evt['event_table'].squeeze()
 
@@ -82,7 +87,9 @@ class HitGraphProducer(ProcessorBase):
         #spacepoints = evt['spacepoint_table'].reset_index(drop=True)
         spacepoints = evt['spacepoint_table'].query('Chi_squared<=0.5').reset_index(drop=True)#applies a chi2 filter
         # discard any events with less than 3 spacepoints
-        if len(spacepoints)<3: return evt.name, None
+        if len(spacepoints)<3:
+            print("skipping event because spacepoints are less than 3")
+            return evt.name, None
 
         # discard any events with pathologically large hit integrals
         # this is a hotfix that should be removed once the dataset is fixed
@@ -90,18 +97,38 @@ class HitGraphProducer(ProcessorBase):
             print('found event with pathologically large hit integral, skipping')
             return evt.name, None
 
+        #discard any events with a non-scalar/duplicate g4_id
+        particle  = evt['particle_table']
+        g4_duplicated_mask = particle.duplicated(subset='g4_id', keep=False)
+        g4_duplicates = particle[g4_duplicated_mask]
+
+        if not g4_duplicates.empty:
+            print('skipping event with duplicate g4_id')
+ #           r, sr, e, cryoID = evt.event_id
+ #           print('----- EVENT -----')
+ #           print('run ', r, "subrun ", sr)
+ #           print('event ', e)
+            grouped_ = g4_duplicates.groupby('g4_id')
+ #           for key, group in grouped_:
+ #               count = group['g4_id'].count()
+ #               print(f"Group: {key} | g4_id count: {count}")
+ #               print(group['g4_id'])
+ #               print('-' * 40)
+ #           print('----- END of previous EVENT -----')
+            return evt.name, None
+
         # handle energy depositions
         if self.semantic_labeller:
             edeps = evt['edep_table']
             energy_col = 'energy' if 'energy' in edeps.columns else 'energy_fraction' # for backwards compatibility
-        
+
             # get ID of max particle
             g4_id = edeps[[energy_col, 'g4_id', 'hit_id']]
             g4_id = g4_id.sort_values(by=[energy_col],
                                       ascending=False,
                                       kind='mergesort').drop_duplicates('hit_id')
             hits = g4_id.merge(hits, on='hit_id', how='right')
-            
+
             # charge-weighted average of 3D position
             if self.label_position:
                 edeps = edeps[["hit_id", "energy", "x_position", "y_position", "z_position"]]
@@ -126,6 +153,7 @@ class HitGraphProducer(ProcessorBase):
             planehits = hits[hits.global_plane==i]
             nhits = planehits.filter_label.sum() if self.semantic_labeller else planehits.shape[0]
             if nhits < self.lower_bound:
+                print("skipping events with fewer than lower_bound simulated hits in any plane")
                 return evt.name, None
 
         #r, sr, e = evt.event_id
@@ -142,8 +170,9 @@ class HitGraphProducer(ProcessorBase):
                 try:
                     hits = hits.merge(particles, on='g4_id', how='left')
                     hits = hits.merge(evt['particle_table'][['from_nu','g4_id']], on='g4_id', how='left')
-                    #consider cosmics as background
-                    hits.loc[hits['from_nu']==0, "semantic_label"] = -1
+
+                   #consider cosmics as background -- obslete now: use y_filter and y_semantic
+                   # hits.loc[hits['from_nu']==0, "semantic_label"] = -1
                 except:
                     print('exception occurred when merging hits and particles')
                     print('hit table:', hits)
@@ -157,17 +186,22 @@ class HitGraphProducer(ProcessorBase):
             #print('hit table:', hits)
             mask = (~hits.g4_id.isnull()) & (hits.semantic_label.isnull())
             if mask.any():
-                print(f'found {mask.sum()} orphaned hits out of {len(hits)} hits.')
+                print(f'found {mask.sum()} orphaned hits out of {len(hits)} hits, skipping.')
+#                print("G4_ID: ", hits.g4_id)
+#                print("SEMANTIC LABEL: ", hits.semantic_label)
                 return evt.name, None
             del mask
 
         data = pyg.data.HeteroData()
 
         # event metadata
-        r, sr, e = evt.event_id
+        r, sr, e, cryoID, beamName = evt.event_id
         data['metadata'].run = r
         data['metadata'].subrun = sr
         data['metadata'].event = e
+        data['metadata'].cryoID = cryoID
+        data['metadata'].beamName = beamName
+        #print("run ", r, "subrun", sr, "event", e, "cryo", cryoID)
 
         # spacepoint nodes
         if "position_x" in spacepoints.keys():
@@ -211,8 +245,28 @@ class HitGraphProducer(ProcessorBase):
             data[p, 'nexus', 'sp'].edge_index = edge3d.long()
 
             # truth information
+            f1_sem_nu = (plane_hits['from_nu'].fillna(0.0).astype(bool)) | (plane_hits['semantic_label'].fillna(-1) != -1)
+            #keeps True from_nu=True OR sem_lab>=0 (for noise filter AND/OR semantic loss on nu only)
+
+#            f1_filter_all = (plane_hits['from_nu'].fillna(0.0))
+             #keeps True from_nu=True (noise+cosmics filter)
+
+            sem_mask = plane_hits['semantic_label'].fillna(-1).astype(int).values
+            from_nu_mask = plane_hits['from_nu'].fillna(0.0).astype(bool).values
+
+#            sem_no_cosmics = np.where(from_nu_mask, sem_mask, -1) #keep sem value if from_nu otherwise sem = -1
+            sem_w_cosmics = np.where(f1_sem_nu, sem_mask, -1) #keep sem value if filter in truth is 1
+
+            data[p].y_filter = torch.tensor(f1_sem_nu.values).float()
+
+            #adding from_nu to data
+            from_nu_tensor = torch.tensor(from_nu_mask).bool()  # or .float() if you prefer
+            data[p].from_nu = from_nu_tensor
+
+
             if self.semantic_labeller:
-                data[p].y_semantic = torch.tensor(plane_hits['semantic_label'].fillna(-1).values).long()
+                data[p].y_semantic = torch.tensor(sem_w_cosmics).long() #exclude cosmics from semantic loss (ignore_index -1)
+#                data[p].y_semantic = torch.tensor(plane_hits['semantic_label'].fillna(-1).values).long() #o.g. no excluding cosmics/from_nu
                 data[p].y_semantic[data[p].y_semantic > 4] = -1
                 #data[p].y_instance = torch.tensor(plane_hits['instance_label'].fillna(-1).values).long()
                 if self.store_detailed_truth:

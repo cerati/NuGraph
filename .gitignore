@@ -174,3 +174,6 @@ logs
 
 # specific directories
 workspace
+
+# local logs
+process_log.txt

@@ -16,6 +16,7 @@ def process(args):
 
     # open input file
     f = pynuml.io.File(args.infile)
+    print("events in file: ", len(f))
 
     # create graph processor
     processor = pynuml.process.HitGraphProducer(

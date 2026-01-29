@@ -21,7 +21,8 @@ def merge(args):
 
         # loop over each input file to merge it in
         for fname in tqdm.tqdm(glob.glob(f'{args.file}*.h5')):
-            with h5py.File(fname) as fin:
+           print(fname) 
+           with h5py.File(fname) as fin:
 
                 # loop over keys in input file
                 for key in fin.keys():
@@ -29,13 +30,17 @@ def merge(args):
                     # if it's the dataset group, loop over graphs and write those
                     if key == 'dataset':
                         for graph in data_in.keys():
+                            #see whether some data are repeated
+                            if graph in data_out:
+                                print("Repeated Event: ", (graph))
+#                                continue
                             fin.copy(data_in[graph], data_out, graph)
                     # otherwise it's metadata, so just copy it directly
                     else:
                         fin.copy(data_in, fout, key)
 
             # delete temporary file once it's been merged
-            os.remove(fname)
+#            os.remove(fname)
 
     # prepare dataset
     H5DataModule.generate_samples(args.file)
