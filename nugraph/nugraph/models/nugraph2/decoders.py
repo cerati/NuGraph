@@ -50,8 +50,9 @@ class DecoderBase(nn.Module, ABC):
         metrics[f'loss_{self.name}/{stage}'] = loss
         if stage == 'train':
             metrics[f'temperature/{self.name}'] = self.temp
-        for cm in self.confusion.values():
-            cm.update(x, y)
+        if stage in ("val", "test"):
+            for cm in self.confusion.values():
+                cm.update(x, y)
         return loss, metrics
 
     def draw_confusion_matrix(self, cm: tm.ConfusionMatrix) -> plt.Figure:
