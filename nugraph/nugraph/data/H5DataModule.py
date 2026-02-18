@@ -30,8 +30,8 @@ class H5DataModule(LightningDataModule):
 
         self.filename = data_path
         self.batch_size = batch_size
-        if shuffle != 'random' and shuffle != 'balance':
-            print('shuffle argument must be "random" or "balance".')
+        if shuffle != 'random' and shuffle != 'balance' and shuffle != 'sequential':
+            print('shuffle argument must be "random" or "balance" or "sequential".')
             sys.exit()
         self.shuffle = shuffle
         self.balance_frac = balance_frac
@@ -166,6 +166,9 @@ class H5DataModule(LightningDataModule):
                         datasize=self.train_datasize,
                         batch_size=self.batch_size, 
                         balance_frac=self.balance_frac)
+        elif self.shuffle == 'sequential':
+            shuffle = False
+            sampler = None
         else:
             shuffle = True
             sampler = None
