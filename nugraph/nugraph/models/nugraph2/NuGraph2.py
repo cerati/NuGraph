@@ -108,6 +108,7 @@ class NuGraph2(LightningModule):
             batch = Batch.from_data_list([data])
 
         print('step1',data)
+        exit(1)
         # unpack tensors to pass into forward function
         x = self(batch.collect('x'),
                  { p: batch[p, 'plane', p].edge_index for p in self.planes },
