@@ -19,6 +19,7 @@ class H5DataModule(LightningDataModule):
     def __init__(self,
                  data_path: str,
                  batch_size: int,
+                 num_workers: int,
                  shuffle: str = 'random',
                  balance_frac: float = 0.1,
                  prepare: bool = False):
@@ -30,6 +31,7 @@ class H5DataModule(LightningDataModule):
 
         self.filename = data_path
         self.batch_size = batch_size
+        self.num_workers = num_workers
         if shuffle != 'random' and shuffle != 'balance' and shuffle != 'sequential':
             print('shuffle argument must be "random" or "balance" or "sequential".')
             sys.exit()
@@ -175,15 +177,16 @@ class H5DataModule(LightningDataModule):
 
         return DataLoader(self.train_dataset,
                           batch_size=self.batch_size,
+                          num_workers=self.num_workers,
                           sampler=sampler, drop_last=True, 
                           shuffle=shuffle, pin_memory=True)
 
     def val_dataloader(self) -> DataLoader:
-        return DataLoader(self.val_dataset,
+        return DataLoader(self.val_dataset,num_workers=self.num_workers,
                           batch_size=self.batch_size)
 
     def test_dataloader(self) -> DataLoader:
-        return DataLoader(self.test_dataset,
+        return DataLoader(self.test_dataset,num_workers=self.num_workers,
                           batch_size=self.batch_size)
 
     @staticmethod
@@ -194,6 +197,8 @@ class H5DataModule(LightningDataModule):
                           help='Location of input data file')
         data.add_argument('--batch-size', type=int, default=64,
                           help='Size of each batch of graphs')
+        data.add_argument('--num-workers', type=int, default=5,
+                          help='Number of data loader worker processes')
         data.add_argument('--limit_train_batches', type=int, default=None,
                           help='Max number of training batches to be used')
         data.add_argument('--limit_val_batches', type=int, default=None,

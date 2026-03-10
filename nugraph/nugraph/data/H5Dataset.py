@@ -19,6 +19,6 @@ class H5Dataset(Dataset):
         return len(self._samples)
 
     def get(self, idx: int) -> 'pyg.data.HeteroData':
-        print('dataset get1',self._samples[idx])
-        print('dataset get2',self._interface.load_heterodata(self._samples[idx]))
+        #print('dataset get1',self._samples[idx])
+        #print('dataset get2',self._interface.load_heterodata(self._samples[idx]))
         return self._interface.load_heterodata(self._samples[idx])
