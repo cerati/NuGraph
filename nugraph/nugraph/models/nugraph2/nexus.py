@@ -92,9 +92,10 @@ class NexusNet(nn.Module):
             n[i] = self.nexus_up(x=(x[p], nexus), edge_index=edge_index[p])
 
         # convolve in nexus space
+        n_flat = cat(n, dim=-1).flatten(start_dim=1)
         sp = nexus.repeat(1, self.num_classes) 
-        n = self.ckpt(self.nexus_net, cat(n + [sp], dim=-1))
+        n = self.ckpt(self.nexus_net, cat([n_flat, sp], dim=-1))
 
         # project back down to planes
         for p in self.nexus_down:
-            x[p] = self.ckpt(self.nexus_down[p], x[p], edge_index[p], n)
+            x[p] = self.ckpt(self.nexus_down[p], x[p].flatten(start_dim=1), edge_index[p], n)

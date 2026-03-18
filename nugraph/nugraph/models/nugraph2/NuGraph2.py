@@ -113,7 +113,7 @@ class NuGraph2(LightningModule):
         x = self(batch.collect('x'),
                  { p: batch[p, 'plane', p].edge_index for p in self.planes },
                  { p: batch[p, 'nexus', 'sp'].edge_index for p in self.planes },
-                 batch['sp'].x
+                 batch['sp'].x,
                  { p: batch[p].batch for p in self.planes })
 
         # append output tensors back onto input data object
@@ -245,7 +245,7 @@ class NuGraph2(LightningModule):
                            help='Number of message-passing iterations')
         model.add_argument('--in-feats', type=int, default=4,
                            help='Number of input node features')
-        model.add_argument('--sp-feats', type=int, default=0,
+        model.add_argument('--sp-feats', type=int, default=2,
                            help='Number of spacepoint node features')
         model.add_argument('--planar-feats', type=int, default=64,
                            help='Hidden dimensionality of planar convolutions')
