@@ -40,13 +40,13 @@ class NexusFeatures(BaseTransform):
 
     # chi-squared
     # weighted average of time, w.r.t. rms, [n_sp, 1]
-    t_weigh_avg = ((t / (sigmas**2)).sum(dim=1) / (1 / (sigmas**2)).sum(dim=1)).unsqueeze(1)
+    t_weigh_avg = ((times / (sigmas**2)).sum(dim=1) / (1 / (sigmas**2)).sum(dim=1)).unsqueeze(1)
     # rms of the weighted mean, [n_sp, 1]
-    s_weigh_avg = (1 / (1 / sigmas**2).sum(d=1)).unsqueeze(1) 
+    s_weigh_avg = (1 / (1 / sigmas**2).sum(dim=1)).unsqueeze(1) 
     chi2 = ((times - t_weigh_avg)**2 / (sigmas**2 - s_weigh_avg**2)).sum(dim=1).unsqueeze(1)
 
     # nexus nodes get two [delta_T, chi2] features
     # we concat along the existing dimension to [n_sp, 2]
-    data['sp'].x = cat(delta_T, chi2, dim=1) 
+    data['sp'].x = cat((delta_T, chi2), dim=1) 
 
     return data
