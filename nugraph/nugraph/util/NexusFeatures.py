@@ -43,8 +43,8 @@ class NexusFeatures(BaseTransform):
     t_weigh_avg = ((times / (sigmas**2)).sum(dim=1) / (1 / (sigmas**2)).sum(dim=1)).unsqueeze(1)
     # rms of the weighted mean, [n_sp, 1]
     s_weigh_avg = (1 / (1 / sigmas**2).sum(dim=1)).unsqueeze(1) 
-    chi2 = ((times - t_weigh_avg)**2 / (sigmas**2 - s_weigh_avg**2)).sum(dim=1).unsqueeze(1)
-
+    chi2 = ((times - t_weigh_avg)**2 / (sigmas**2 - s_weigh_avg).clamp(min=1e-6)).sum(dim=1).unsqueeze(1)
+        
     # nexus nodes get two [delta_T, chi2] features
     # we concat along the existing dimension to [n_sp, 2]
     data['sp'].x = cat((delta_T, chi2), dim=1) 
