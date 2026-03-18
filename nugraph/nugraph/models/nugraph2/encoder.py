@@ -7,6 +7,8 @@ class Encoder(nn.Module):
     def __init__(self,
                  in_features: int,
                  node_features: int,
+                 sp_features: int,
+                 nexus_features: int,
                  planes: list[str],
                  classes: list[str]):
         super().__init__()
@@ -20,5 +22,9 @@ class Encoder(nn.Module):
                 ClassLinear(in_features, node_features, self.num_classes),
                 nn.Tanh())
 
+        self.net['sp'] = nn.Sequential(
+            ClassLinear(sp_features, nexus_features, self.num_classes),
+            nn.Tanh())
+            
     def forward(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
         return { p: net(x[p].unsqueeze(1).expand(-1, self.num_classes, -1)) for p, net in self.net.items() }

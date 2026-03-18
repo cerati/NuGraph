@@ -17,13 +17,13 @@ class NexusDown(MessagePassing):
         super().__init__(node_dim=0, aggr=aggr, flow='target_to_source')
 
         self.edge_net = nn.Sequential(
-            ClassLinear(planar_features+nexus_features,
+            ClassLinear(planar_features + nexus_features,
                         1,
                         num_classes),
             nn.Softmax(dim=1))
 
         self.node_net = nn.Sequential(
-            ClassLinear(planar_features+nexus_features,
+            ClassLinear(planar_features + nexus_features,
                         planar_features,
                         num_classes),
             nn.Tanh(),
@@ -55,14 +55,12 @@ class NexusNet(nn.Module):
 
         self.checkpoint = checkpoint
 
-        self.sp_features = sp_features
-
         self.num_classes = num_classes
 
         self.nexus_up = SimpleConv(node_dim=0)
 
         self.nexus_net = nn.Sequential(
-            ClassLinear(len(planes)*planar_features + sp_features,
+            ClassLinear(len(planes)*planar_features + nexus_features + sp_features,
                         nexus_features,
                         num_classes),
             nn.Tanh(),
@@ -84,17 +82,16 @@ class NexusNet(nn.Module):
         else:
             return fn(*args)
 
-    def forward(self, x: dict[str, Tensor], edge_index: dict[str, Tensor], nexus: Tensor) -> None:
+    def forward(self, x: dict[str, Tensor], edge_index: dict[str, Tensor], nexus : Tensor) -> None:
 
         # project up to nexus space
         n = [None] * len(self.nexus_down)
         for i, p in enumerate(self.nexus_down):
             n[i] = self.nexus_up(x=(x[p], nexus), edge_index=edge_index[p])
-
+        
         # convolve in nexus space
-        sp = nexus.unsqueeze(1).expand(-1, self.num_classes, -1)
-        n = self.ckpt(self.nexus_net, cat(n + [sp], dim=-1))
+        x['sp'] = self.ckpt(self.nexus_net, cat((cat(n, dim=-1), x['sp']), dim=2))
 
         # project back down to planes
         for p in self.nexus_down:
-            x[p] = self.ckpt(self.nexus_down[p], x[p], edge_index[p], n)
+            x[p] = self.ckpt(self.nexus_down[p], x[p], edge_index[p], x['sp'])
