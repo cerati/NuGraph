@@ -12,7 +12,7 @@ from torch_geometric.transforms import Compose
 from pytorch_lightning import LightningDataModule
 
 from ..data import H5Dataset, BalanceSampler
-from ..util import PositionFeatures, FeatureNormMetric, FeatureNorm, FeatureExtension#, HierarchicalEdges, EventLabels
+from ..util import PositionFeatures, NexusFeatures, FeatureNormMetric, FeatureNorm, FeatureExtension#, HierarchicalEdges, EventLabels
 
 class H5DataModule(LightningDataModule):
     """PyTorch Lightning data module for neutrino graph data."""
@@ -77,7 +77,8 @@ class H5DataModule(LightningDataModule):
                 print('Feature normalisations not found in file! Call "generate_norm" to create them.')
                 sys.exit()
 
-        transform = Compose((PositionFeatures(self.planes),
+        transform = Compose((NexusFeatures(self.planes),
+                             PositionFeatures(self.planes),
                              FeatureNorm(self.planes, norm),
                              #FeatureExtension.FeatureExtension(self.planes)
                              #HierarchicalEdges(self.planes),

@@ -3,6 +3,7 @@ from .RecallLoss import RecallLoss
 from .LogCoshLoss import LogCoshLoss
 from .ObjCondensationLoss import ObjCondensationLoss
 from .PositionFeatures import PositionFeatures
+from .NexusFeatures import NexusFeatures
 from .FeatureNorm import FeatureNorm, FeatureNormMetric
 from .hierarchical_edges import HierarchicalEdges
 from .event_labels import EventLabels
