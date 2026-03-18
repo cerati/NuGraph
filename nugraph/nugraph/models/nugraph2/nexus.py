@@ -44,6 +44,7 @@ class NexusDown(MessagePassing):
 class NexusNet(nn.Module):
     '''Module to project to nexus space and mix detector planes'''
     def __init__(self,
+                 sp_features: int,
                  planar_features: int,
                  nexus_features: int,
                  num_classes: int,
@@ -54,10 +55,14 @@ class NexusNet(nn.Module):
 
         self.checkpoint = checkpoint
 
+        self.sp_features = sp_features
+
+        self.num_classes = num_classes
+
         self.nexus_up = SimpleConv(node_dim=0)
 
         self.nexus_net = nn.Sequential(
-            ClassLinear(len(planes)*planar_features,
+            ClassLinear(len(planes)*planar_features + sp_features,
                         nexus_features,
                         num_classes),
             nn.Tanh(),
@@ -87,7 +92,8 @@ class NexusNet(nn.Module):
             n[i] = self.nexus_up(x=(x[p], nexus), edge_index=edge_index[p])
 
         # convolve in nexus space
-        n = self.ckpt(self.nexus_net, cat(n, dim=-1))
+        sp = nexus.repeat(1, self.num_classes) 
+        n = self.ckpt(self.nexus_net, cat(n + [sp], dim=-1))
 
         # project back down to planes
         for p in self.nexus_down:

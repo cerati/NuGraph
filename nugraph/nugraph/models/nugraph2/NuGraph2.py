@@ -24,6 +24,7 @@ class NuGraph2(LightningModule):
     inference, and compute training metrics."""
     def __init__(self,
                  in_features: int = 4,
+                 sp_features: int = 2,
                  planar_features: int = 64,
                  nexus_features: int = 16,
                  planes: list[str] = ['u','v','y'],
@@ -55,7 +56,8 @@ class NuGraph2(LightningModule):
                                   planes,
                                   checkpoint=checkpoint)
 
-        self.nexus_net = NexusNet(planar_features,
+        self.nexus_net = NexusNet(sp_features,
+                                  planar_features,
                                   nexus_features,
                                   len(semantic_classes),
                                   planes,
@@ -111,7 +113,7 @@ class NuGraph2(LightningModule):
         x = self(batch.collect('x'),
                  { p: batch[p, 'plane', p].edge_index for p in self.planes },
                  { p: batch[p, 'nexus', 'sp'].edge_index for p in self.planes },
-                 torch.empty(batch['sp'].num_nodes, 0),
+                 batch['sp'].x
                  { p: batch[p].batch for p in self.planes })
 
         # append output tensors back onto input data object
@@ -243,6 +245,8 @@ class NuGraph2(LightningModule):
                            help='Number of message-passing iterations')
         model.add_argument('--in-feats', type=int, default=4,
                            help='Number of input node features')
+        model.add_argument('--sp-feats', type=int, default=0,
+                           help='Number of spacepoint node features')
         model.add_argument('--planar-feats', type=int, default=64,
                            help='Hidden dimensionality of planar convolutions')
         model.add_argument('--nexus-feats', type=int, default=16,
@@ -263,6 +267,7 @@ class NuGraph2(LightningModule):
     def from_args(cls, args: argparse.Namespace, nudata: H5DataModule) -> 'NuGraph2':
         return cls(
             in_features=args.in_feats,
+            sp_features=args.sp_feats,
             planar_features=args.planar_feats,
             nexus_features=args.nexus_feats,
             planes=nudata.planes,
