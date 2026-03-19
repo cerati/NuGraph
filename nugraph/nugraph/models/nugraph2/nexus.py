@@ -4,7 +4,7 @@ from torch import Tensor, cat
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
-from torch_geometric.nn import MessagePassing, SimpleConv
+from torch_geometric.nn import MessagePassing, SimpleConv, GCNConv
 
 from .linear import ClassLinear
 
@@ -57,7 +57,8 @@ class NexusNet(nn.Module):
 
         self.num_classes = num_classes
 
-        self.nexus_up = SimpleConv(node_dim=0)
+        # self.nexus_up = SimpleConv(node_dim=0)
+        self.nexus_up = GCNConv(planar_features, nexus_features)
 
         self.nexus_net = nn.Sequential(
             ClassLinear(len(planes)*planar_features + nexus_features + sp_features,
