@@ -4,7 +4,7 @@ from torch import Tensor, cat
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
-from torch_geometric.nn import MessagePassing, SimpleConv, GCNConv
+from torch_geometric.nn import MessagePassing, SimpleConv, SAGEConv
 
 from .linear import ClassLinear
 
@@ -58,7 +58,13 @@ class NexusNet(nn.Module):
         self.num_classes = num_classes
 
         # self.nexus_up = SimpleConv(node_dim=0)
-        self.nexus_up = GCNConv(planar_features, nexus_features)
+        self.up_proj = nn.Sequential(
+            ClassLinear(planar_features, planar_features, num_classes),
+            nn.Tanh(),
+            #ClassLinear(planar_features, planar_features, num_classes),
+            #nn.Tanh()
+        )
+        self.nexus_up = SimpleConv(node_dim=0)
 
         self.nexus_net = nn.Sequential(
             ClassLinear(len(planes)*planar_features + nexus_features + sp_features,
@@ -88,7 +94,7 @@ class NexusNet(nn.Module):
         # project up to nexus space
         n = [None] * len(self.nexus_down)
         for i, p in enumerate(self.nexus_down):
-            n[i] = self.nexus_up(x=(x[p], nexus), edge_index=edge_index[p])
+            n[i] = self.nexus_up(x=(self.up_proj(x[p]), nexus), edge_index=edge_index[p])
         
         # convolve in nexus space
         x['sp'] = self.ckpt(self.nexus_net, cat((cat(n, dim=-1), x['sp']), dim=2))
