@@ -160,6 +160,15 @@ class NuGraph2(LightningModule):
     def training_step(self,
                       batch,
                       batch_idx: int) -> float:
+        #debug
+        #print(batch)
+        #if batch_idx == 0:
+        #    import os
+        #    path = f"/global/u1/c/cerati/NuGraph/debug_rank{self.global_rank}.txt"
+        #    with open(path, "w") as f:
+        #        f.write(f"rank {self.global_rank}: num_graphs={batch.num_graphs}, "
+        #                f"first_feature={batch['y'].x[0,0]:.4f}\n")
+
         self.step(batch)
         total_loss = 0.
         for decoder in self.decoders:
@@ -169,6 +178,10 @@ class NuGraph2(LightningModule):
         self.log('loss/train', total_loss, batch_size=batch.num_graphs, prog_bar=True)
         self.log_memory(batch, 'train')
         return total_loss
+
+    def on_train_epoch_end(self) -> None:
+        for decoder in self.decoders:
+            decoder.on_train_epoch_end()
 
     def validation_step(self,
                         batch,

@@ -69,6 +69,14 @@ class DecoderBase(nn.Module, ABC):
         plt.ylabel('True label')
         return fig
 
+    def reset_metrics(self) -> None:
+        # do nothing, this is relevant only for the Semanatic decoder
+        return
+
+    def on_train_epoch_end(self) -> None:
+        self.reset_metrics()
+        return
+
     def on_epoch_end(self,
                      logger: 'pl.loggers.TensorBoardLogger',
                      stage: str,
@@ -80,6 +88,7 @@ class DecoderBase(nn.Module, ABC):
                 self.draw_confusion_matrix(cm),
                 global_step=epoch)
             cm.reset()
+        self.reset_metrics()
 
 class SemanticDecoder(DecoderBase):
     """NuGraph semantic decoder module.
@@ -94,7 +103,7 @@ class SemanticDecoder(DecoderBase):
         super().__init__('semantic',
                          planes,
                          semantic_classes,
-                         RecallLoss(),
+                         RecallLoss(num_classes=len(semantic_classes)),
                          weight=2.)
 
         # torchmetrics arguments
@@ -129,6 +138,10 @@ class SemanticDecoder(DecoderBase):
             f'recall_semantic/{stage}': self.recall(x, y),
             f'precision_semantic/{stage}': self.precision(x, y)
         }
+
+    def reset_metrics(self) -> None:
+        self.loss_func.recall_metric.reset()
+        return
 
 class FilterDecoder(DecoderBase):
     """NuGraph filter decoder module.

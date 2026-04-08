@@ -9,7 +9,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 import nugraph as ng
 import signal
 
-torch.set_num_threads(4)
+#torch.set_num_threads(4)
 
 import warnings
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
@@ -35,11 +35,14 @@ def configure():
 
 def train(args):
 
-    torch.manual_seed(1)
+    pl.seed_everything(1, workers=True)
 
+    #print(os.environ['CUDA_VISIBLE_DEVICES'])
+    #print(args.shuffle)
     # Load dataset
-    nudata = Data(args.data_path, batch_size=args.batch_size, 
-                  shuffle=args.shuffle, balance_frac=args.balance_frac, num_workers=args.num_workers)
+    nudata = Data(args.data_path, batch_size=args.batch_size,
+                  shuffle="random", num_workers=args.num_workers)
+                  #shuffle=args.shuffle, balance_frac=args.balance_frac)
 
     if args.name is not None and args.logdir is not None and args.resume is None:
         model = Model.from_args(args, nudata)
@@ -68,15 +71,20 @@ def train(args):
         SLURMEnvironment(requeue_signal=signal.SIGUSR1),
     ]
 
-    accelerator, devices = ng.util.configure_device()
-    trainer = pl.Trainer(accelerator=accelerator, devices=devices,
+    #accelerator, devices = ng.util.configure_device(args.device)
+    trainer = pl.Trainer(devices=1,#4,
+                         accelerator="gpu", strategy="ddp",
+                         #accelerator=accelerator, devices=devices,
                          max_epochs=args.epochs,
                          limit_train_batches=args.limit_train_batches,
                          limit_val_batches=args.limit_val_batches,
                          logger=logger, profiler=args.profiler,
                          callbacks=callbacks, plugins=plugins)
 
-    trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
+    if args.resume is not None:
+        trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
+    else:
+        trainer.fit(model, datamodule=nudata)
     trainer.test(datamodule=nudata)
 
 if __name__ == '__main__':
