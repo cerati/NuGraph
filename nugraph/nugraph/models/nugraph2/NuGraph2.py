@@ -107,8 +107,6 @@ class NuGraph2(LightningModule):
         else:
             batch = Batch.from_data_list([data])
 
-        #print('step1',data)
-        #exit(1)
         # unpack tensors to pass into forward function
         x = self(batch.collect('x'),
                  { p: batch[p, 'plane', p].edge_index for p in self.planes },
@@ -160,22 +158,13 @@ class NuGraph2(LightningModule):
     def training_step(self,
                       batch,
                       batch_idx: int) -> float:
-        #debug
-        #print(batch)
-        #if batch_idx == 0:
-        #    import os
-        #    path = f"/global/u1/c/cerati/NuGraph/debug_rank{self.global_rank}.txt"
-        #    with open(path, "w") as f:
-        #        f.write(f"rank {self.global_rank}: num_graphs={batch.num_graphs}, "
-        #                f"first_feature={batch['y'].x[0,0]:.4f}\n")
-
         self.step(batch)
         total_loss = 0.
         for decoder in self.decoders:
             loss, metrics = decoder.loss(batch, 'train')
             total_loss += loss
-            self.log_dict(metrics, batch_size=batch.num_graphs)
-        self.log('loss/train', total_loss, batch_size=batch.num_graphs, prog_bar=True)
+            self.log_dict(metrics, batch_size=batch.num_graphs, sync_dist=True)
+        self.log('loss/train', total_loss, batch_size=batch.num_graphs, prog_bar=True, sync_dist=True)
         self.log_memory(batch, 'train')
         return total_loss
 
@@ -191,8 +180,8 @@ class NuGraph2(LightningModule):
         for decoder in self.decoders:
             loss, metrics = decoder.loss(batch, 'val', True)
             total_loss += loss
-            self.log_dict(metrics, batch_size=batch.num_graphs)
-        self.log('loss/val', total_loss, batch_size=batch.num_graphs)
+            self.log_dict(metrics, batch_size=batch.num_graphs, sync_dist=True)
+        self.log('loss/val', total_loss, batch_size=batch.num_graphs, sync_dist=True)
 
     def on_validation_epoch_end(self) -> None:
         epoch = self.trainer.current_epoch + 1
@@ -207,8 +196,8 @@ class NuGraph2(LightningModule):
         for decoder in self.decoders:
             loss, metrics = decoder.loss(batch, 'test', True)
             total_loss += loss
-            self.log_dict(metrics, batch_size=batch.num_graphs)
-        self.log('loss/test', total_loss, batch_size=batch.num_graphs)
+            self.log_dict(metrics, batch_size=batch.num_graphs, sync_dist=True)
+        self.log('loss/test', total_loss, batch_size=batch.num_graphs, sync_dist=True)
         self.log_memory(batch, 'test')
 
     def on_test_epoch_end(self) -> None:
@@ -238,7 +227,7 @@ class NuGraph2(LightningModule):
         cpu_mem = psutil.Process().memory_info().rss / float(1073741824)
         self.max_mem_cpu = max(self.max_mem_cpu, cpu_mem)
         self.log(f'memory_cpu/{stage}', self.max_mem_cpu,
-                 batch_size=batch.num_graphs, reduce_fx=torch.max)
+                 batch_size=batch.num_graphs, reduce_fx=torch.max, sync_dist=True)
 
         # log GPU memory
         if not hasattr(self, 'max_mem_gpu'):
@@ -248,7 +237,7 @@ class NuGraph2(LightningModule):
             gpu_mem = float(gpu_mem) / float(1073741824)
             self.max_mem_gpu = max(self.max_mem_gpu, gpu_mem)
             self.log(f'memory_gpu/{stage}', self.max_mem_gpu,
-                     batch_size=batch.num_graphs, reduce_fx=torch.max)
+                     batch_size=batch.num_graphs, reduce_fx=torch.max, sync_dist=True)
 
     @staticmethod
     def add_model_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:

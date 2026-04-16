@@ -103,7 +103,7 @@ class SemanticDecoder(DecoderBase):
         super().__init__('semantic',
                          planes,
                          semantic_classes,
-                         RecallLoss(num_classes=len(semantic_classes)),
+                         RecallLoss(num_classes=len(semantic_classes),epoch_accumulation=False),
                          weight=2.)
 
         # torchmetrics arguments
