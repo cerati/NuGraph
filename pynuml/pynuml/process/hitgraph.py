@@ -246,11 +246,11 @@ class HitGraphProducer(ProcessorBase):
                 return evt.name, None
 
             # node position
-            data["ophits"].pos = torch.tensor(ophits[["wire_pos_0", "wire_pos_1", "wire_pos_2"]].values).float()
-            data["opflash"].pos = torch.tensor(opflash[["wire_pos_0", "wire_pos_1", "wire_pos_2"]].values).float()
+            data["ophit"].pos = torch.tensor(ophits[["wire_pos_0", "wire_pos_1", "wire_pos_2"]].values).float()
+            data["flash"].pos = torch.tensor(opflash[["wire_pos_0", "wire_pos_1", "wire_pos_2"]].values).float()
 
             if "pos_y" in sum_pe.columns:
-                data["opflashsumpe"].pos = torch.tensor(sum_pe[["pos_y", "pos_z"]].values).float()
+                data["pmt"].pos = torch.tensor(sum_pe[["pos_y", "pos_z"]].values).float()
             else:
                 #hardcoded positions for MicroBooNE's opdets
                 opdet_pos_y = torch.tensor([55.267144, 55.962509, 27.555318, -0.850317, -28.561692, -56.620694, -56.447756, 55.442895, 55.789304, -0.675445,
@@ -261,35 +261,32 @@ class HitGraphProducer(ProcessorBase):
                                             664.15, 752.05, 711.25, 540.85, 500.05, 585.25, 452.95, 540.55, 500.35, 328.15,
                                             287.95, 373.75, 242.05, 328.45, 287.65, 128.35,  87.85,  51.25, 173.65,  50.35,
                                             128.05,  87.85])
-                data["opflashsumpe"].pos = torch.stack([opdet_pos_y[sum_pe["pmt_channel"].values], opdet_pos_z[sum_pe["pmt_channel"].values]], dim=1)
+                data["pmt"].pos = torch.stack([opdet_pos_y[sum_pe["pmt_channel"].values], opdet_pos_z[sum_pe["pmt_channel"].values]], dim=1)
 
-            # node features (not including the positions)
-            data["ophits"].x = torch.cat([data["ophits"].pos,torch.tensor(ophits[["amplitude", "area",  "pe", "peaktime", "width"]].values).float()],dim=1)
-            data["opflash"].x = torch.cat([data["opflash"].pos,torch.tensor(opflash[["time", "time_width", "totalpe", "y_center", "y_width", "z_center", "z_width"]].values).float()],dim=1)
-            data["opflashsumpe"].x = torch.cat([data["opflashsumpe"].pos,torch.tensor(sum_pe[["pmt_channel", "sumpe"]].values).float()],dim=1)
+            # optical node features (not including the positions)
+            data["ophit"].x = torch.cat([data["ophit"].pos,
+            torch.tensor(ophits[["amplitude", "area",  "pe", "peaktime", "width"]].values).float()],dim=1)
+            data["flash"].x = torch.cat([data["flash"].pos,torch.tensor(opflash[["time", "time_width", "totalpe", "y_center", "y_width", "z_center", "z_width"]].values).float()],dim=1)
+            data["pmt"].x = torch.cat([data["pmt"].pos,torch.tensor(sum_pe[["pmt_channel", "sumpe"]].values).float()],dim=1)
 
-            # there are no 'horizontal' edges within the PMT hierarchy?
-
-            # 1st hierarchical layer
+            # ophit to pmt edges
             edge1 = torch.tensor(ophits[["hit_id","sumpe_id"]].values.transpose())
             mask = edge1[1,:]>=0
             mask = torch.nonzero(mask)
             edge1 = torch.squeeze(edge1[:,mask])
-            data["ophits", "sumpe", "opflashsumpe"].edge_index = edge1.long()
+            data["ophit", "in", "pmt"].edge_index = edge1.long()
 
-            # 2nd hierarchical layer
+            # pmt to flash edges
             edge2 = torch.tensor(sum_pe[["sumpe_id", "flash_id"]].values.transpose())
-            data["opflashsumpe", "flash", "opflash"].edge_index = edge2.long()
+            data["pmt", "in", "flash"].edge_index = edge2.long()
 
-            # 3rd hierarchical layer
+            # flash to event edges
             edge3 = torch.tensor([opflash["flash_id"].values[0], 0])
-            data["opflash", "in", "evt"].edge_index = edge3
+            data["flash", "in", "evt"].edge_index = edge3
 
-            # layer between spacepoint and opflash level in optical data
-
+            # nexus to pmt edges
             spacepoints_nodes = torch.tensor(spacepoints[["position_y", "position_z"]].values)
-
-            distances = torch.cdist( spacepoints_nodes, data["opflashsumpe"].pos, p=2)
+            distances = torch.cdist( spacepoints_nodes, data["pmt"].pos, p=2)
             nnear = 2
             _, nearest_indices = torch.topk(distances, nnear, largest=False, dim=1)
 
@@ -297,7 +294,7 @@ class HitGraphProducer(ProcessorBase):
             opflashsumpe_indices = nearest_indices.flatten()
 
             edges = torch.stack([spacepoints_indices, opflashsumpe_indices], dim=0)
-            data["sp", "connection", "opflashsumpe"].edge_index = edges.long()
+            data["sp", "knn", "pmt"].edge_index = edges.long()
 
         # event label
         if self.event_labeller:
