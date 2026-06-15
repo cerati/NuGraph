@@ -93,10 +93,10 @@ def train(args):
         SLURMEnvironment(),
     ]
 
-    accelerator, devices = ng.util.configure_device(args.device)
+    #accelerator, devices = ng.util.configure_device(args.device)
     trainer = pl.Trainer(
-        accelerator=accelerator,
-        devices=devices,
+        accelerator="gpu",#accelerator,
+        devices=[0],#devices,
         max_epochs=args.epochs,
         limit_train_batches=args.limit_train_batches,
         limit_val_batches=args.limit_val_batches,
