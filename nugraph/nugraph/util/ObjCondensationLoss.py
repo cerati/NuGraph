@@ -21,8 +21,7 @@ class ObjCondensationLoss(torch.nn.Module):
 
         # check inputs
         if not n_true:
-            raise RuntimeError(("Cannot compute object condensation loss "
-                                "when there are no true instances!"))
+            return torch.zeros(3, dtype=dtype, device=device)
 
         # determine which hit is the condensation point for each true instance,
         # and get beta values (f_centers) and hit indices (centers)
