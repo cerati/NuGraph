@@ -90,6 +90,8 @@ class NuGraphData(HeteroData):
         group = dset[()]
         for dataset in group.dtype.names:
             store, attr = dataset.split('/')
+            if 'ophit' in store:
+                continue
             if "_" in store:
                 store = tuple(store.split("_"))
             if group[dataset].ndim == 0:
