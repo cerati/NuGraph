@@ -1,11 +1,14 @@
 #!/usr/bin/env python
+
+import torch
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 import os
 import argparse
 import pathlib
 import signal
 import warnings
 
-import torch
 import pytorch_lightning as pl
 from pytorch_lightning.plugins.environments import SLURMEnvironment
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
@@ -90,9 +93,7 @@ def train(args):
         callbacks.append(ModelCheckpoint(monitor="loss/val", mode="min"))
 
     # configure plugins
-    plugins = [
-        SLURMEnvironment(),
-    ]
+    plugins = [ SLURMEnvironment(requeue_signal=signal.SIGUSR1) ]
 
     #accelerator, devices = ng.util.configure_device(args.device)
     trainer = pl.Trainer(
