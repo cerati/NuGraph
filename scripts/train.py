@@ -39,6 +39,9 @@ def configure():
                         help="write wandb logs offline")
     parser.add_argument('--profiler', type=str, default=None,
                         help='Enable requested profiler')
+    parser.add_argument('--precision', type=str, default=None,
+                        choices=('16-mixed', '32', '64', 'bf16-mixed'),
+                        help='Precision for training (AMP)')
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
     return parser.parse_args()
@@ -106,6 +109,7 @@ def train(args):
         profiler=args.profiler,
         callbacks=callbacks,
         plugins=plugins,
+        precision=args.precision,
     )
 
     trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
