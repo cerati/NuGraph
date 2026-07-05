@@ -40,7 +40,7 @@ def train(args):
     # Load dataset
     nudata = Data(args.data_path, batch_size=args.batch_size,
                   shuffle=args.shuffle, balance_frac=args.balance_frac,
-                  nexus_radius=args.nexus_radius)
+                  nexus_k=args.nexus_k)
 
     if args.name is not None and args.logdir is not None and args.resume is None:
         model = Model.from_args(args, nudata)

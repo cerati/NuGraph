@@ -21,7 +21,7 @@ class H5DataModule(LightningDataModule):
                  batch_size: int,
                  shuffle: str = 'random',
                  balance_frac: float = 0.1,
-                 nexus_radius: float = 8.0,
+                 nexus_k: int = 8,
                  prepare: bool = False):
         super().__init__()
 
@@ -81,7 +81,7 @@ class H5DataModule(LightningDataModule):
 
         transform = Compose((NexusFeatures(self.planes),
                              PositionFeatures(self.planes),
-                             SpacePointGraph(nexus_radius),
+                             SpacePointGraph(nexus_k),
                              FeatureNorm(self.planes, norm),
                              #FeatureExtension.FeatureExtension(self.planes)
                              #HierarchicalEdges(self.planes),
@@ -206,6 +206,6 @@ class H5DataModule(LightningDataModule):
                           help='Dataset shuffling scheme to use')
         data.add_argument('--balance-frac', type=float, default=0.1,
                           help='Fraction of dataset to use for workload balancing')
-        data.add_argument('--nexus-radius', type=float, default=8.0,
-                          help='Radius cutoff (cm) for the 3D spacepoint graph')
+        data.add_argument('--nexus-k', type=int, default=8,
+                          help='Number of nearest neighbours for the 3D spacepoint graph')
         return parser

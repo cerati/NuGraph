@@ -24,7 +24,7 @@ def test(args):
 
     print('data path =',args.data_path)
     nudata = Data(args.data_path, batch_size=args.batch_size,
-                  nexus_radius=args.nexus_radius)
+                  nexus_k=args.nexus_k)
 
     print('using checkpoint =',args.checkpoint)
     model = Model.load_from_checkpoint(args.checkpoint, map_location='cpu')
