@@ -12,7 +12,7 @@ from torch_geometric.transforms import Compose
 from pytorch_lightning import LightningDataModule
 
 from ..data import H5Dataset, BalanceSampler
-from ..util import PositionFeatures, NexusFeatures, FeatureNormMetric, FeatureNorm, FeatureExtension#, HierarchicalEdges, EventLabels
+from ..util import PositionFeatures, NexusFeatures, SpacePointGraph, FeatureNormMetric, FeatureNorm, FeatureExtension#, HierarchicalEdges, EventLabels
 
 class H5DataModule(LightningDataModule):
     """PyTorch Lightning data module for neutrino graph data."""
@@ -21,6 +21,7 @@ class H5DataModule(LightningDataModule):
                  batch_size: int,
                  shuffle: str = 'random',
                  balance_frac: float = 0.1,
+                 nexus_radius: float = 8.0,
                  prepare: bool = False):
         super().__init__()
 
@@ -73,12 +74,14 @@ class H5DataModule(LightningDataModule):
                 norm = {}
                 for p in self.planes:
                     norm[p] = tensor(f[f'norm/{p}'][()])
+                norm['sp'] = tensor(f['norm/sp'][()])
             except:
                 print('Feature normalisations not found in file! Call "generate_norm" to create them.')
                 sys.exit()
 
         transform = Compose((NexusFeatures(self.planes),
                              PositionFeatures(self.planes),
+                             SpacePointGraph(nexus_radius),
                              FeatureNorm(self.planes, norm),
                              #FeatureExtension.FeatureExtension(self.planes)
                              #HierarchicalEdges(self.planes),
@@ -141,20 +144,23 @@ class H5DataModule(LightningDataModule):
                 print('Metadata not found in file! "planes" is required.')
                 sys.exit()
 
+            # 'sp' features (delta_T, chi2, xyz) depend on NexusFeatures, not
+            # just PositionFeatures, so both transforms are needed here
+            keys = planes + ['sp']
+            transform = Compose((NexusFeatures(planes), PositionFeatures(planes)))
             loader = DataLoader(H5Dataset(data_path,
                                           list(f['dataset'].keys()),
-                                          PositionFeatures(planes)),
+                                          transform),
                                 batch_size=batch_size)
 
             print('  generating feature norm...')
             metrics = None
             for batch in tqdm.tqdm(loader):
-                for p in planes:
-                    if not metrics:
-                        num_feats = batch[p].x.shape[-1]
-                        metrics = { p: FeatureNormMetric(num_feats) for p in planes }
+                if metrics is None:
+                    metrics = { p: FeatureNormMetric(batch[p].x.shape[-1]) for p in keys }
+                for p in keys:
                     metrics[p].update(batch[p].x)
-            for p in planes:
+            for p in keys:
                 key = f'norm/{p}'
                 if key in f:
                     del f[key]
@@ -200,4 +206,6 @@ class H5DataModule(LightningDataModule):
                           help='Dataset shuffling scheme to use')
         data.add_argument('--balance-frac', type=float, default=0.1,
                           help='Fraction of dataset to use for workload balancing')
+        data.add_argument('--nexus-radius', type=float, default=8.0,
+                          help='Radius cutoff (cm) for the 3D spacepoint graph')
         return parser

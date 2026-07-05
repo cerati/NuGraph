@@ -24,7 +24,7 @@ class NuGraph2(LightningModule):
     inference, and compute training metrics."""
     def __init__(self,
                  in_features: int = 4,
-                 sp_features: int = 2,
+                 sp_features: int = 5,
                  planar_features: int = 64,
                  nexus_features: int = 16,
                  planes: list[str] = ['u','v','y'],
@@ -89,6 +89,7 @@ class NuGraph2(LightningModule):
                 x: dict[str, Tensor],
                 edge_index_plane: dict[str, Tensor],
                 edge_index_nexus: dict[str, Tensor],
+                edge_index_3d: Tensor,
                 nexus: Tensor,
                 batch: dict[str, Tensor]) -> dict[str, Tensor]:
         m = self.encoder(x)
@@ -102,7 +103,7 @@ class NuGraph2(LightningModule):
             # shortcut connect features for nexus
             s = x['sp'].detach().unsqueeze(1).expand(-1, m['sp'].size(1), -1)
             m['sp'] = torch.cat((m['sp'], s), dim=-1)
-            self.nexus_net(m, edge_index_nexus, nexus)
+            self.nexus_net(m, edge_index_nexus, edge_index_3d, nexus)
         ret = {}
         for decoder in self.decoders:
             ret.update(decoder(m, batch))
@@ -120,6 +121,7 @@ class NuGraph2(LightningModule):
         x = self(batch.collect('x'),
                  { p: batch[p, 'plane', p].edge_index for p in self.planes },
                  { p: batch[p, 'nexus', 'sp'].edge_index for p in self.planes },
+                 batch['sp', 'sp3d', 'sp'].edge_index,
                  batch['sp'].x,
                  { p: batch[p].batch for p in self.planes })
 
@@ -252,7 +254,7 @@ class NuGraph2(LightningModule):
                            help='Number of message-passing iterations')
         model.add_argument('--in-feats', type=int, default=4,
                            help='Number of input node features')
-        model.add_argument('--sp-feats', type=int, default=2,
+        model.add_argument('--sp-feats', type=int, default=5,
                            help='Number of spacepoint node features')
         model.add_argument('--planar-feats', type=int, default=64,
                            help='Hidden dimensionality of planar convolutions')

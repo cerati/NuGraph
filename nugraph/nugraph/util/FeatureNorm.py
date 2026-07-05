@@ -38,4 +38,8 @@ class FeatureNorm(BaseTransform):
         for p in self.planes:
             mean, std = self.norm[p]
             data[p].x = (data[p].x - mean[None,:]) / std[None,:]
+        # nexus/spacepoint nodes aren't one of the detector planes, so they're
+        # normalised separately here
+        mean, std = self.norm['sp']
+        data['sp'].x = (data['sp'].x - mean[None,:]) / std[None,:]
         return data

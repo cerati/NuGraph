@@ -38,8 +38,9 @@ def train(args):
     torch.manual_seed(1)
 
     # Load dataset
-    nudata = Data(args.data_path, batch_size=args.batch_size, 
-                  shuffle=args.shuffle, balance_frac=args.balance_frac)
+    nudata = Data(args.data_path, batch_size=args.batch_size,
+                  shuffle=args.shuffle, balance_frac=args.balance_frac,
+                  nexus_radius=args.nexus_radius)
 
     if args.name is not None and args.logdir is not None and args.resume is None:
         model = Model.from_args(args, nudata)
