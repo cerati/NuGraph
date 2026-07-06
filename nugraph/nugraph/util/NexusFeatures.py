@@ -14,8 +14,8 @@ class NexusFeatures(BaseTransform):
     super().__init__()
     self.planes = planes
 
-  def __call__(
-    self, 
+  def forward(
+    self,
     data: 'pyg.data.HeteroData'
     ) -> 'pyg.data.HeteroData':
 

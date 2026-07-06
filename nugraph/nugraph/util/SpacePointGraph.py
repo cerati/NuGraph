@@ -25,7 +25,7 @@ class SpacePointGraph(BaseTransform):
         super().__init__()
         self.k = k
 
-    def __call__(self, data: 'pyg.data.HeteroData') -> 'pyg.data.HeteroData':
+    def forward(self, data: 'pyg.data.HeteroData') -> 'pyg.data.HeteroData':
         pos = data['sp'].pos
         n = pos.size(0)
 
