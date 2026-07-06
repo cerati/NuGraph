@@ -51,9 +51,10 @@ class Transform(BaseTransform):
                     size=(h.num_nodes, n_sp), relabel_nodes=True)
                 data[pname, "nexus", "sp"].edge_index = edge_index
 
-        # ensure event truth labels have correct format
+        # ensure event truth labels have correct format, if present
+        # (datasets processed without an event labeller won't have this)
         evt = data["evt"]
-        if not evt.y.ndim:
+        if hasattr(evt, "y") and not evt.y.ndim:
             evt.y = evt.y.reshape([1])
 
         # concatenate position tensor onto node features
