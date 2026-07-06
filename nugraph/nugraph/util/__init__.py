@@ -1,11 +1,13 @@
 """Loss functions, data transforms and general utilities"""
-from .RecallLoss import RecallLoss
+from .confusion_matrix_logger import ConfusionMatrixLogger
+from .recall_loss import RecallLoss
 from .LogCoshLoss import LogCoshLoss
 from .ObjCondensationLoss import ObjCondensationLoss
-from .PositionFeatures import PositionFeatures
+from .position_features import PositionFeatures
+from .feature_extension import FeatureExtension
 from .NexusFeatures import NexusFeatures
 from .SpacePointGraph import SpacePointGraph
-from .FeatureNorm import FeatureNorm, FeatureNormMetric
 from .hierarchical_edges import HierarchicalEdges
 from .event_labels import EventLabels
-from .scriptutils import configure_device
+from .scriptutils import setup_env, configure_device
+from .input_norm import InputNorm

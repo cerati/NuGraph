@@ -13,6 +13,8 @@ Model = ng.models.NuGraph2
 
 def configure():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--device", type=int, default=None,
+                        help="Index of GPU device to test with")
     parser.add_argument('--checkpoint', type=str, required=True,
                         help='Checkpoint file for trained model')
     parser.add_argument('--outfile', type=str, required=True,
@@ -24,7 +26,7 @@ def test(args):
 
     print('data path =',args.data_path)
     nudata = Data(args.data_path, batch_size=args.batch_size,
-                  nexus_k=args.nexus_k)
+                  model=Model, nexus_k=args.nexus_k)
 
     print('using checkpoint =',args.checkpoint)
     model = Model.load_from_checkpoint(args.checkpoint, map_location='cpu')
@@ -33,7 +35,7 @@ def test(args):
     if os.path.isfile(args.outfile):
         raise Exception(f'file {args.outfile} already exists!')
 
-    accelerator, devices = ng.util.configure_device()
+    accelerator, devices = ng.util.configure_device(args.device)
     trainer = pl.Trainer(accelerator=accelerator, devices=devices,
                          logger=False)
     plot = pynuml.plot.GraphPlot(planes=nudata.planes,

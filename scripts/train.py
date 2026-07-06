@@ -1,17 +1,17 @@
 #!/usr/bin/env python
-
 import os
 import argparse
+import pathlib
+import signal
+import warnings
+
 import torch
 import pytorch_lightning as pl
 from pytorch_lightning.plugins.environments import SLURMEnvironment
-from pytorch_lightning.callbacks import LearningRateMonitor
+from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import nugraph as ng
-import signal
 
 torch.set_num_threads(4)
-
-import warnings
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
 
 Data = ng.data.H5DataModule
@@ -19,14 +19,21 @@ Model = ng.models.NuGraph2
 
 def configure():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--device', type=int, default=None,
+                        help="Index of GPU device to train with")
+    parser.add_argument('--logger', type=str, default="tensorboard",
+                        choices=("wandb", "tensorboard"),
+                        help="Which logging method to use")
     parser.add_argument('--name', type=str, default=None,
                         help='Training instance name, for logging purposes')
     parser.add_argument('--version', type=str, default=None,
                         help='Training version name, for logging purposes')
-    parser.add_argument('--logdir', type=str, default=None,
-                        help='Output directory to write logs to')
-    parser.add_argument('--resume', type=str, default=None,
-                        help='Checkpoint file to resume training from')
+    parser.add_argument("--project", type=str, default="nugraph3",
+                        help="wandb project to log to")
+    parser.add_argument("--resume", type=str,
+                        help="model checkpoint file to resume training with")
+    parser.add_argument("--offline", action="store_true",
+                        help="write wandb logs offline")
     parser.add_argument('--profiler', type=str, default=None,
                         help='Enable requested profiler')
     parser = Data.add_data_args(parser)
@@ -39,46 +46,68 @@ def train(args):
 
     # Load dataset
     nudata = Data(args.data_path, batch_size=args.batch_size,
-                  shuffle=args.shuffle, balance_frac=args.balance_frac,
-                  nexus_k=args.nexus_k)
+                  model=Model, shuffle=args.shuffle,
+                  balance_frac=args.balance_frac, num_workers=args.num_workers,
+                  nexus_k=args.nexus_k, featext=args.featext)
 
-    if args.name is not None and args.logdir is not None and args.resume is None:
-        model = Model.from_args(args, nudata)
-        name = args.name
-        logdir = args.logdir
-        version = args.version
-        os.makedirs(os.path.join(logdir, args.name), exist_ok=True)
-    elif args.resume is not None and args.name is None and args.logdir is None:
+    if args.resume:
         model = Model.load_from_checkpoint(args.resume)
-        stub = os.path.dirname(os.path.dirname(args.resume))
-        stub, version = os.path.split(stub)
-        logdir, name = os.path.split(stub)
     else:
-        raise Exception('You must pass either the --name and --logdir arguments to start an existing training, or the --resume argument to resume an existing one.')
+        model = Model.from_args(args, nudata)
 
-    # logger = pl.loggers.WandbLogger(save_dir=logdir, project=name, name=version)
-    logger = pl.loggers.TensorBoardLogger(save_dir=logdir,
-                                          name=name, version=version,
-                                          default_hp_metric=False)
+    # Configure logger
+    if args.logger == "wandb":
+        logdir = pathlib.Path(os.environ["NUGRAPH_LOG"])/args.name
+        logdir.mkdir(parents=True, exist_ok=True)
+        log_model = False if args.offline else "all"
+        logger = pl.loggers.WandbLogger(
+            save_dir=logdir,
+            project=args.project,
+            name=args.name,
+            version=args.version,
+            log_model=log_model,
+            offline=args.offline
+        )
+        warnings.warn(('The "wandb" logging option is deprecated, and will be '
+                       'removed in a future nugraph version! Please switch '
+                       'your workflow to use tensorboard logging.'))
+    elif args.logger == "tensorboard":
+        logdir = os.environ["NUGRAPH_LOG"]
+        logger = pl.loggers.TensorBoardLogger(
+            save_dir=logdir,
+            name=args.name,
+            version=args.version,
+            default_hp_metric=False
+        )
+    else:
+        raise RuntimeError(f'Logger option "{args.logger}" not recognized!')
 
-    callbacks = [
-        LearningRateMonitor(logging_interval='step'),
-    ]
+    # configure callbacks
+    callbacks = []
+    if logger:
+        callbacks.append(LearningRateMonitor(logging_interval='step'))
+    if isinstance(logger, pl.loggers.WandbLogger) and not args.offline:
+        callbacks.append(ModelCheckpoint(monitor="loss/val", mode="min"))
 
+    # configure plugins
     plugins = [
-        SLURMEnvironment(requeue_signal=signal.SIGUSR1),
+        SLURMEnvironment(),
     ]
 
-    accelerator, devices = ng.util.configure_device()
-    trainer = pl.Trainer(accelerator=accelerator, devices=devices,
-                         max_epochs=args.epochs,
-                         limit_train_batches=args.limit_train_batches,
-                         limit_val_batches=args.limit_val_batches,
-                         logger=logger, profiler=args.profiler,
-                         callbacks=callbacks, plugins=plugins)
+    accelerator, devices = ng.util.configure_device(args.device)
+    trainer = pl.Trainer(
+        accelerator=accelerator,
+        devices=devices,
+        max_epochs=args.epochs,
+        limit_train_batches=args.limit_train_batches,
+        limit_val_batches=args.limit_val_batches,
+        logger=logger,
+        profiler=args.profiler,
+        callbacks=callbacks,
+        plugins=plugins,
+    )
 
     trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
-    trainer.test(datamodule=nudata)
 
 if __name__ == '__main__':
     args = configure()

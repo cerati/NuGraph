@@ -1,96 +1,109 @@
+"""NuGraph data module"""
 from argparse import ArgumentParser
 import warnings
 
+import os
 import sys
 import h5py
 import tqdm
 
-from torch import tensor, cat
-from torch.utils.data import random_split
+import torch
 from torch_geometric.loader import DataLoader
 from torch_geometric.transforms import Compose
 from pytorch_lightning import LightningDataModule
 
-from ..data import H5Dataset, BalanceSampler
-from ..util import PositionFeatures, NexusFeatures, SpacePointGraph, FeatureNormMetric, FeatureNorm, FeatureExtension#, HierarchicalEdges, EventLabels
+from ..data import NuGraphDataset, BalanceSampler
+from ..util import PositionFeatures, FeatureExtension
 
-class H5DataModule(LightningDataModule):
+DEFAULT_DATA = ("$NUGRAPH_DATA/uboone-opendata/"
+                "uboone-opendata-19be46d89d0f22f5a78641d724c1fedd.gnn.h5")
+
+class NuGraphDataModule(LightningDataModule):
     """PyTorch Lightning data module for neutrino graph data."""
     def __init__(self,
-                 data_path: str,
-                 batch_size: int,
+                 data_path: str = "auto",
+                 model: type[torch.nn.Module] = None,
+                 batch_size: int = 64,
+                 num_workers: int = 5,
                  shuffle: str = 'random',
                  balance_frac: float = 0.1,
                  nexus_k: int = 8,
-                 prepare: bool = False):
+                 featext: bool = False):
         super().__init__()
 
         # for this HDF5 dataloader, worker processes slow things down
         # so we silence PyTorch Lightning's warnings
         warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
-        self.filename = data_path
+        if data_path == "auto":
+            data_path = DEFAULT_DATA
+        self.filename = os.path.expandvars(data_path)
         self.batch_size = batch_size
-        if shuffle != 'random' and shuffle != 'balance':
+        self.num_workers = num_workers
+        if shuffle not in ("random", "balance"):
             print('shuffle argument must be "random" or "balance".')
             sys.exit()
         self.shuffle = shuffle
         self.balance_frac = balance_frac
+        self.nexus_k = nexus_k
+        self.featext = featext
 
         with h5py.File(self.filename) as f:
 
             # load metadata
             try:
+                # pylint: disable=no-member
                 self.planes = f['planes'].asstr()[()].tolist()
                 self.semantic_classes = f['semantic_classes'].asstr()[()].tolist()
-            except:
-                print('Metadata not found in file! "planes" and "semantic_classes" are required.')
+            except KeyError:
+                print(("Metadata not found in file! "
+                       "\"planes\" and \"semantic_classes\" are required."))
                 sys.exit()
+
+            # get graph structure generation
+            # if that info is missing, it's first generation
+            try:
+                # pylint: disable=no-member
+                self.gen = f["gen"][()].item()
+            except KeyError:
+                self.gen = 1
 
             # load optional event labels
             if 'event_classes' in f:
+                # pylint: disable=no-member
                 self.event_classes = f['event_classes'].asstr()[()].tolist()
             else:
                 self.event_classes = None
 
             # load sample splits
             try:
+                # pylint: disable=no-member
                 train_samples = f['samples/train'].asstr()[()]
                 val_samples = f['samples/validation'].asstr()[()]
                 test_samples = f['samples/test'].asstr()[()]
-            except:
-                print('Sample splits not found in file! Call "generate_samples" to create them.')
+            except KeyError:
+                print(("Sample splits not found in file! "
+                       "Call \"generate_samples\" to create them."))
                 sys.exit()
 
             # load data sizes
             try:
                 self.train_datasize = f['datasize/train'][()]
-            except:
-                print('Data size array not found in file! Call "generate_samples" to create it.')
+            except KeyError:
+                print(("Data size array not found in file! "
+                       "Call \"generate_samples\" to create it."))
                 sys.exit()
 
-            # load feature normalisations
-            try:
-                norm = {}
-                for p in self.planes:
-                    norm[p] = tensor(f[f'norm/{p}'][()])
-                norm['sp'] = tensor(f['norm/sp'][()])
-            except:
-                print('Feature normalisations not found in file! Call "generate_norm" to create them.')
-                sys.exit()
+        transform = []
+        if model:
+            transform.append(model.transform(planes=self.planes, nexus_k=self.nexus_k))
+        if self.featext:
+            transform.append(FeatureExtension(planes=self.planes))
+        transform = Compose(transform) if transform else None
 
-        transform = Compose((NexusFeatures(self.planes),
-                             PositionFeatures(self.planes),
-                             SpacePointGraph(nexus_k),
-                             FeatureNorm(self.planes, norm),
-                             #FeatureExtension.FeatureExtension(self.planes)
-                             #HierarchicalEdges(self.planes),
-                             #EventLabels()
-                            ))
-
-        self.train_dataset = H5Dataset(self.filename, train_samples, transform)
-        self.val_dataset = H5Dataset(self.filename, val_samples, transform)
-        self.test_dataset = H5Dataset(self.filename, test_samples, transform)
+        self.train_dataset = NuGraphDataset(self.filename, train_samples, transform)
+        self.val_dataset = NuGraphDataset(self.filename, val_samples, transform)
+        self.test_dataset = NuGraphDataset(self.filename, test_samples, transform)
 
     @staticmethod
     def generate_samples(data_path: str):
@@ -98,7 +111,7 @@ class H5DataModule(LightningDataModule):
             samples = list(f['dataset'].keys())
         split = int(0.05 * len(samples))
         splits = [ len(samples)-(2*split), split, split ]
-        train, val, test = random_split(samples, splits)
+        train, val, test = torch.utils.data.random_split(samples, splits)
 
         with h5py.File(data_path, "r+") as f:
             for name in [ 'train', 'validation', 'test' ]:
@@ -122,7 +135,7 @@ class H5DataModule(LightningDataModule):
             if 'datasize/train' in f:
                 del f['datasize/train']
         transform = PositionFeatures(planes)
-        dataset = H5Dataset(data_path, train, transform)
+        dataset = NuGraphDataset(data_path, train, transform)
         def datasize(data):
             ret = 0
             for store in data.stores:
@@ -133,45 +146,13 @@ class H5DataModule(LightningDataModule):
         del dataset
         with h5py.File(data_path, "r+") as f:
             f.create_dataset('datasize/train', data=dsize)
-            
-    @staticmethod
-    def generate_norm(data_path: str, batch_size: int):
-        with h5py.File(data_path, 'r+') as f:
-            # load plane metadata
-            try:
-                planes = f['planes'].asstr()[()].tolist()
-            except:
-                print('Metadata not found in file! "planes" is required.')
-                sys.exit()
-
-            # 'sp' features (delta_T, chi2, xyz) depend on NexusFeatures, not
-            # just PositionFeatures, so both transforms are needed here
-            keys = planes + ['sp']
-            transform = Compose((NexusFeatures(planes), PositionFeatures(planes)))
-            loader = DataLoader(H5Dataset(data_path,
-                                          list(f['dataset'].keys()),
-                                          transform),
-                                batch_size=batch_size)
-
-            print('  generating feature norm...')
-            metrics = None
-            for batch in tqdm.tqdm(loader):
-                if metrics is None:
-                    metrics = { p: FeatureNormMetric(batch[p].x.shape[-1]) for p in keys }
-                for p in keys:
-                    metrics[p].update(batch[p].x)
-            for p in keys:
-                key = f'norm/{p}'
-                if key in f:
-                    del f[key]
-                f[key] = metrics[p].compute()
 
     def train_dataloader(self) -> DataLoader:
         if self.shuffle == 'balance':
             shuffle = False
             sampler = BalanceSampler.BalanceSampler(
                         datasize=self.train_datasize,
-                        batch_size=self.batch_size, 
+                        batch_size=self.batch_size,
                         balance_frac=self.balance_frac)
         else:
             shuffle = True
@@ -179,25 +160,27 @@ class H5DataModule(LightningDataModule):
 
         return DataLoader(self.train_dataset,
                           batch_size=self.batch_size,
-                          sampler=sampler, drop_last=True, 
+                          num_workers=self.num_workers,
+                          sampler=sampler, drop_last=True,
                           shuffle=shuffle, pin_memory=True)
 
     def val_dataloader(self) -> DataLoader:
-        return DataLoader(self.val_dataset,
+        return DataLoader(self.val_dataset, num_workers=self.num_workers,
                           batch_size=self.batch_size)
 
     def test_dataloader(self) -> DataLoader:
-        return DataLoader(self.test_dataset,
+        return DataLoader(self.test_dataset, num_workers=self.num_workers,
                           batch_size=self.batch_size)
 
     @staticmethod
     def add_data_args(parser: ArgumentParser) -> ArgumentParser:
         data = parser.add_argument_group('data', 'Data module configuration')
-        data.add_argument('--data-path', type=str,
-                          default='/raid/uboone/NuGraph2/NG2-paper.gnn.h5',
+        data.add_argument('--data-path', type=str, default="auto",
                           help='Location of input data file')
         data.add_argument('--batch-size', type=int, default=64,
                           help='Size of each batch of graphs')
+        data.add_argument('--num-workers', type=int, default=5,
+                          help='Number of data loader worker processes')
         data.add_argument('--limit_train_batches', type=int, default=None,
                           help='Max number of training batches to be used')
         data.add_argument('--limit_val_batches', type=int, default=None,
@@ -208,4 +191,6 @@ class H5DataModule(LightningDataModule):
                           help='Fraction of dataset to use for workload balancing')
         data.add_argument('--nexus-k', type=int, default=8,
                           help='Number of nearest neighbours for the 3D spacepoint graph')
+        data.add_argument('--featext', action='store_true', default=False,
+                          help='Enable extended features')
         return parser

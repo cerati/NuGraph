@@ -1,45 +1,59 @@
+"""Object condensation loss function"""
 import torch
-from torch import Tensor
+from torch_scatter import scatter_max
+
+T = torch.Tensor
 
 class ObjCondensationLoss(torch.nn.Module):
-    def __init__(self, S_b: float = 1.0, q_min: float = 0.5):
+    def __init__(self, s_b: float = 1.0, q_min: float = 0.5):
         super().__init__()
-        self.S_b = S_b
+        self.s_b = s_b
         self.q_min = q_min
 
-    def background_loss(self, beta: Tensor, y: Tensor) -> Tensor:
-        K = y.max() + 1
-        n_i = (y == -1)
-        M_ik = torch.zeros((y.size(0), K), device=y.device).long()
-        M_ik[~n_i,:] = torch.nn.functional.one_hot(y[~n_i], num_classes=K)
-        beta_ak = (beta[:,None] * M_ik).max(dim=0).values
-        N_b = n_i.sum()
-        L_beta_1 = (1 - beta_ak).sum() / K
-        L_beta_2 = (self.S_b / N_b) * (n_i * beta).sum()
-        L_beta = torch.sum(L_beta_1 + L_beta_2)
-        return L_beta
-    
-    def potential_loss(self, x: Tensor, beta: Tensor, y: Tensor) -> Tensor:
-        K = y.max() + 1
-        n_i = (y == -1)
-        M_ik = torch.zeros((y.size(0), K), device=y.device).long()
-        M_ik[~n_i,:] = torch.nn.functional.one_hot(y[~n_i], num_classes=K)
-        q_i = beta.atanh().square() + self.q_min
-        q_max = (q_i[:,None] * M_ik).max(dim=0)
-        q_ak = q_max.values
-        idx_ak = q_max.indices
-        x_a = x[idx_ak]
-        x_diff = (x[:,None,:] - x_a[None,:,:]).square().sum(dim=2)
-        x_inv = 1 - x_diff
-        x_inv[(x_inv < 0)] = 0
-        V_k_a = x_diff[None,:] * q_ak
-        V_k_r = x_inv[None, :] * q_ak
-        N=y.size(0)
-        L_v_1=M_ik*(V_k_a)
-        L_v_2=(1-M_ik)*(V_k_r)
-        L_v=((L_v_1+L_v_2).sum(dim=2) * q_i).sum () / N
-        return L_v
+    def forward(self, x: T, f: T, y_i: T, y_s: T, n_true: int, e_true: T,
+                l_p: T) -> T:
 
-    def forward(self, x: tuple[Tensor, Tensor], y: Tensor) -> Tensor:
-        x, beta = x
-        return self.background_loss(beta, y) + self.potential_loss(x, beta, y)
+        device = x.device
+        dtype = x.dtype
+
+        # hit information
+        n_hit = x.size(0)
+
+        # check inputs
+        if not n_true:
+            raise RuntimeError(("Cannot compute object condensation loss "
+                                "when there are no true instances!"))
+
+        # determine which hit is the condensation point for each true instance,
+        # and get beta values (f_centers) and hit indices (centers)
+        e_h, e_p = e_true
+        f_centers = torch.zeros(n_true, dtype=dtype, device=device)
+        f_centers, centers = scatter_max(f[e_h], e_p, out=f_centers)
+        centers = e_h[centers]
+
+        # calculate background loss terms
+        b = 1 - (f_centers.sum() / n_true)
+        bkg_mask = (y_i == -1) & (y_s >= 0)
+        n_bkg = bkg_mask.sum()
+        if n_bkg:
+            b += (self.s_b / n_bkg) * f[bkg_mask].sum()
+
+        # calculate the charge on each hit
+        q = f.atanh().square() + self.q_min
+
+        # calculate attractive and repulsive potentials
+        m_ik = torch.zeros(n_hit, n_true, dtype=torch.bool, device=device)
+        m_ik[e_h, e_p] = True
+        dist = (x[:, None, :] - x[centers][None, :, :]).square().sum(dim=2)
+        v = torch.where(m_ik, dist, (1 - dist).clamp(0))
+        v = ((v * q[centers]).sum(dim=1) * q).sum() / n_hit
+
+        # calculate particle loss using semantic loss
+        if l_p is None:
+            p = torch.tensor(0., dtype=dtype, device=device)
+        else:
+            n_i = bkg_mask.float()
+            xi = (1 - n_i) * f.atanh().square()
+            p = (l_p * xi).sum() / (xi.sum())
+
+        return torch.stack([b, v, p])

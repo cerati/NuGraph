@@ -6,6 +6,8 @@ import plotly.express as px
 from plotly.graph_objects import FigureWidget
 import warnings
 
+C_3D = ("x", "y", "z")
+
 class GraphPlot:
     def __init__(self,
                  planes: list[str],
@@ -28,45 +30,48 @@ class GraphPlot:
         def to_categorical(arr):
             return pd.Categorical.from_codes(codes=arr+1, dtype=self._labels)
         if isinstance(data, Batch):
-            raise Exception('to_dataframe does not support batches!')
-        dfs = []
-        for p in self._planes:
-            plane = data[p].to_dict()
-            df = pd.DataFrame(plane['id'], columns=['id'])
-            df['plane'] = p
-            df[['wire','time']] = plane['pos']
-            if "c" in plane:
-                df[["x", "y", "z"]] = plane["c"]
-            df['y_filter'] = plane['y_semantic'] != -1
-            mask = df.y_filter.values
-            df['y_semantic'] = to_categorical(plane['y_semantic'])
-            df['y_instance'] = plane['y_instance'].numpy().astype(str)
+            raise RuntimeError('to_dataframe does not support batches!')
 
-            # add detailed truth information if it's available
-            for col in self._truth_cols:
-                if col in plane.keys():
-                    df[col] = plane[col].numpy()
+        hit = data["hit"].to_dict()
+        df = pd.DataFrame(hit["id"], columns=["id"])
+        df["plane"] = [self._planes[i] for i in hit["plane"]]
+        df[["proj", "drift"]] = hit["pos"]
+        if "y_position" in hit:
+            df[[f"y_position_{c}" for c in C_3D]] = hit["y_position"]
+        if "x_position" in hit:
+            df[[f"x_position_{c}" for c in C_3D]] = hit["x_position"]
+        df["y_filter"] = hit["y_semantic"] != -1
+        df['y_semantic'] = to_categorical(hit['y_semantic'])
+        df['y_instance'] = data.y_i().numpy().astype(str)
 
-            # add model prediction if it's available
-            if 'x_semantic' in plane.keys():
-                df['x_semantic'] = to_categorical(plane['x_semantic'].argmax(dim=-1).detach())
-                df[self._classes] = plane['x_semantic'].detach()
-            if 'x_filter' in plane.keys():
-                df['x_filter'] = plane['x_filter'].detach()
-            if "i" in plane.keys():
-                df["i"] = plane["i"].numpy().astype(str)
+        # add detailed truth information if it's available
+        for col in self._truth_cols:
+            if col in hit.keys():
+                df[col] = hit[col].numpy()
 
-            dfs.append(df)
-        df = pd.concat(dfs)
-        # coords = torch.cat([data[p].ox for p in self._planes], dim=0).cpu()
-        # pca = PCA(n_components=2)
-        # df["c1"], df["c2"] = pca.fit_transform(coords).transpose()
-        # beta = torch.cat([data[p].of for p in self._planes], dim=0).cpu()
-        # df["logbeta"] = beta.log10()
+        # add model prediction if it's available
+        if 'x_semantic' in hit.keys():
+            df['x_semantic'] = to_categorical(hit['x_semantic'].argmax(dim=-1).detach())
+            df[self._classes] = hit['x_semantic'].detach()
+        if 'x_filter' in hit.keys():
+            df['x_filter'] = hit['x_filter'].detach()
+        if "ox" in hit.keys():
+            df["i"] = data.x_i().numpy().astype(str)
+
+        # add object condensation embedding
+        if "ox" in hit.keys():
+            coords = data["hit"].ox.cpu()
+            pca = PCA(n_components=2)
+            df["c1"], df["c2"] = pca.fit_transform(coords).transpose()
+            beta = data["hit"].of.cpu()
+            df["logbeta"] = beta.log10()
+
+        # add event metadata
         md = data['metadata']
         df['run'] = md.run.item()
         df['subrun'] = md.subrun.item()
         df['event'] = md.event.item()
+
         return df
 
     def plot(self,
@@ -74,7 +79,7 @@ class GraphPlot:
              target: str = 'hits',
              how: str = 'none',
              filter: str = 'show',
-             xyz: bool = False,
+             xyz: str = None,
              width: int = None,
              height: int = None,
              title: bool = True) -> FigureWidget:
@@ -174,7 +179,10 @@ class GraphPlot:
         elif filter == 'show':
             # show hits predicted to be background in grey
             if target == 'semantic' and how == 'pred':
-                df.x_semantic[df.x_filter < self.filter_threshold] = 'background'
+                if "x_filter" not in df.columns:
+                    raise RuntimeError(("how=\"pred\" and filter=\"show\" passed, "
+                                        "but filter prediction is not set."))
+                df.loc[df.x_filter < self.filter_threshold, "x_semantic"] = 'background'
         elif filter == 'true':
             # remove true background hits
             df = df[df.y_filter.values]
@@ -187,15 +195,18 @@ class GraphPlot:
             raise Exception('"filter" must be one of "none", "show", "true" or "pred".')
 
         if xyz:
-            opts["x"] = "x"
-            opts["y"] = "y"
-            opts["z"] = "z"
+            if xyz == "true":
+                opts.update({c: f"y_position_{c}" for c in C_3D})
+            elif xyz == "pred":
+                opts.update({c: f"x_position_{c}" for c in C_3D})
+            else:
+                raise RuntimeError("\"xyz\" must be either \"true\" or \"pred\".")
         elif how == "pca":
             opts["x"] = "c1"
             opts["y"] = "c2"
         else:
-            opts["x"] = "wire"
-            opts["y"] = "time"
+            opts["x"] = "proj"
+            opts["y"] = "drift"
             opts["facet_col"] = "plane"
 
         if not title:
@@ -205,8 +216,8 @@ class GraphPlot:
         opts['hover_data'] = {
             'y_semantic': True,
             "y_instance": True,
-            'wire': ':.1f',
-            'time': ':.1f',
+            'proj': ':.1f',
+            'drift': ':.1f',
         }
         opts['labels'] = {
             'y_filter': 'filter truth',

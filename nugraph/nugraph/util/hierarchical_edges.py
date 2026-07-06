@@ -18,7 +18,7 @@ class HierarchicalEdges(BaseTransform):
     def __call__(self, data: HeteroData) -> HeteroData:
 
         # no-op if the graph data is already structured how we want
-        if hasattr(data, "hit"):
+        if "hit" in data.node_types:
             return data
 
         # unify planar edges
@@ -65,7 +65,7 @@ class HierarchicalEdges(BaseTransform):
             del data["hit"].y_instance
 
         # add edges to and from event node
-        data["evt"].num_nodes = 1
+        data["evt"].x = torch.empty((1, 0))
         lo = torch.arange(data["hit"].num_nodes, dtype=torch.long)
         hi = torch.zeros(data["hit"].num_nodes, dtype=torch.long)
         data["hit", "in", "evt"].edge_index = torch.stack((lo, hi), dim=0)
