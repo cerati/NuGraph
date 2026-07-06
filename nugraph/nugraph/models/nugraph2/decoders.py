@@ -100,7 +100,7 @@ class DecoderBase(torch.nn.Module, ABC):
             epoch: Epoch number
         """
         for name, cm in self.cm.items():
-            self.cm_logger.log(f"{name}-{stage}", cm, logger, epoch)
+            self.cm_logger.log(name, stage, cm, logger, epoch)
 
 class SemanticDecoder(DecoderBase):
     """
