@@ -15,6 +15,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import nugraph as ng
 
 torch.set_num_threads(4)
+torch.set_float32_matmul_precision('high')
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
 
 Data = ng.data.H5DataModule

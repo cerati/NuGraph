@@ -24,7 +24,7 @@ class NuGraphDataModule(LightningDataModule):
                  data_path: str = "auto",
                  model: type[torch.nn.Module] = None,
                  batch_size: int = 64,
-                 num_workers: int = 5,
+                 num_workers: int = 10,
                  shuffle: str = 'random',
                  balance_frac: float = 0.1,
                  featext: bool = False):
@@ -167,11 +167,11 @@ class NuGraphDataModule(LightningDataModule):
 
     def val_dataloader(self) -> DataLoader:
         return DataLoader(self.val_dataset, num_workers=self.num_workers,
-                          batch_size=self.batch_size)
+                          batch_size=self.batch_size, pin_memory=True)
 
     def test_dataloader(self) -> DataLoader:
         return DataLoader(self.test_dataset, num_workers=self.num_workers,
-                          batch_size=self.batch_size)
+                          batch_size=self.batch_size, pin_memory=True)
 
     @property
     def num_hit_features(self) -> int:
