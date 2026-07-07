@@ -39,7 +39,8 @@ class ObjCondensationLoss(torch.nn.Module):
             b += (self.s_b / n_bkg) * f[bkg_mask].sum()
 
         # calculate the charge on each hit
-        q = f.atanh().square() + self.q_min
+        # clamp in float32: bf16 rounds values >= ~0.992 to exactly 1.0, making atanh(1)=inf
+        q = f.float().clamp(-0.99999, 0.99999).atanh().square() + self.q_min
 
         # calculate attractive and repulsive potentials
         m_ik = torch.zeros(n_hit, n_true, dtype=torch.bool, device=device)
@@ -53,7 +54,9 @@ class ObjCondensationLoss(torch.nn.Module):
             p = torch.tensor(0., dtype=dtype, device=device)
         else:
             n_i = bkg_mask.float()
-            xi = (1 - n_i) * f.atanh().square()
-            p = (l_p * xi).sum() / (xi.sum())
+            # clamp in float32: same bf16 atanh saturation guard as for q above
+            xi = (1 - n_i) * f.float().clamp(-0.99999, 0.99999).atanh().square()
+            xi_sum = xi.sum()
+            p = (l_p * xi).sum() / xi_sum if xi_sum > 0 else torch.tensor(0., dtype=dtype, device=device)
 
         return torch.stack([b, v, p])
