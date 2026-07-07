@@ -9,8 +9,8 @@ import tqdm
 
 import torch
 from torch_geometric.loader import DataLoader
-from pytorch_lightning import LightningDataModule
 from torch_geometric.transforms import Compose
+from pytorch_lightning import LightningDataModule
 
 from ..data import NuGraphDataset, BalanceSampler
 from ..util import FeatureExtension
@@ -24,7 +24,7 @@ class NuGraphDataModule(LightningDataModule):
                  data_path: str = "auto",
                  model: type[torch.nn.Module] = None,
                  batch_size: int = 64,
-                 num_workers: int = 5,
+                 num_workers: int = 10,
                  shuffle: str = 'random',
                  balance_frac: float = 0.1,
                  featext: bool = False):
@@ -92,14 +92,12 @@ class NuGraphDataModule(LightningDataModule):
                        "Call \"generate_samples\" to create it."))
                 sys.exit()
 
-
+        transform = []
         if model:
-            if self.featext:
-                transform = Compose((model.transform(planes=self.planes),FeatureExtension(self.planes)))
-            else:
-                transform = model.transform(planes=self.planes)
-        else:
-            None
+            transform.append(model.transform(planes=self.planes))
+        if self.featext:
+            transform.append(FeatureExtension(planes=self.planes))
+        transform = Compose(transform) if transform else None
 
         self.train_dataset = NuGraphDataset(self.filename, train_samples, transform)
         self.val_dataset = NuGraphDataset(self.filename, val_samples, transform)
@@ -169,11 +167,11 @@ class NuGraphDataModule(LightningDataModule):
 
     def val_dataloader(self) -> DataLoader:
         return DataLoader(self.val_dataset, num_workers=self.num_workers,
-                          batch_size=self.batch_size)
+                          batch_size=self.batch_size, pin_memory=True)
 
     def test_dataloader(self) -> DataLoader:
         return DataLoader(self.test_dataset, num_workers=self.num_workers,
-                          batch_size=self.batch_size)
+                          batch_size=self.batch_size, pin_memory=True)
 
     @property
     def num_hit_features(self) -> int:

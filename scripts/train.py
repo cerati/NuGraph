@@ -15,6 +15,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import nugraph as ng
 
 torch.set_num_threads(4)
+torch.set_float32_matmul_precision('high')
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
 
 Data = ng.data.H5DataModule
@@ -39,6 +40,9 @@ def configure():
                         help="write wandb logs offline")
     parser.add_argument('--profiler', type=str, default=None,
                         help='Enable requested profiler')
+    parser.add_argument('--precision', type=str, default=None,
+                        choices=('16-mixed', '32', '64', 'bf16-mixed'),
+                        help='Precision for training (AMP)')
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
     return parser.parse_args()
@@ -93,9 +97,7 @@ def train(args):
         callbacks.append(ModelCheckpoint(monitor="loss/val", mode="min"))
 
     # configure plugins
-    plugins = [
-        SLURMEnvironment(requeue_signal=signal.SIGUSR1),
-    ]
+    plugins = [ SLURMEnvironment(requeue_signal=signal.SIGUSR1) ]
 
     #accelerator, devices = ng.util.configure_device(args.device)
     trainer = pl.Trainer(
@@ -108,6 +110,7 @@ def train(args):
         profiler=args.profiler,
         callbacks=callbacks,
         plugins=plugins,
+        precision=args.precision,
     )
 
     trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
