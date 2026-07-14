@@ -99,6 +99,10 @@ class NexusNet(torch.nn.Module):
         planes: Tuple of plane names
         aggr: Message aggregation method
         checkpoint: Whether to use checkpointing
+        mess3d: Whether to enable the 3D spacepoint message-passing pathway
+            (persistent spacepoint embedding, up-projection and
+            Nexus3DConv); if disabled, this reverts to a simple per-iteration
+            projection to and from a shared nexus space
     """
     def __init__(self, # pylint: disable=too-many-arguments,too-many-positional-arguments
                  sp_features: int,
@@ -107,27 +111,41 @@ class NexusNet(torch.nn.Module):
                  num_classes: int,
                  planes: tuple[str],
                  aggr: str = 'mean',
-                 checkpoint: bool = True):
+                 checkpoint: bool = True,
+                 mess3d: bool = False):
         super().__init__()
 
         self.checkpoint = checkpoint
+        self.mess3d = mess3d
 
         self.num_classes = num_classes
 
-        self.up_proj = torch.nn.Sequential(
-            ClassLinear(planar_features, planar_features, num_classes),
-            torch.nn.Tanh())
         self.nexus_up = SimpleConv(node_dim=0)
 
-        self.nexus_net = torch.nn.Sequential(
-            ClassLinear(len(planes)*planar_features + nexus_features + sp_features,
-                        nexus_features,
-                        num_classes),
-            torch.nn.Tanh(),
-            ClassLinear(nexus_features,
-                        nexus_features,
-                        num_classes),
-            torch.nn.Tanh())
+        if mess3d:
+            self.up_proj = torch.nn.Sequential(
+                ClassLinear(planar_features, planar_features, num_classes),
+                torch.nn.Tanh())
+            self.nexus_net = torch.nn.Sequential(
+                ClassLinear(len(planes)*planar_features + nexus_features + sp_features,
+                            nexus_features,
+                            num_classes),
+                torch.nn.Tanh(),
+                ClassLinear(nexus_features,
+                            nexus_features,
+                            num_classes),
+                torch.nn.Tanh())
+            self.nexus_conv = Nexus3DConv(nexus_features, num_classes, aggr)
+        else:
+            self.nexus_net = torch.nn.Sequential(
+                ClassLinear(len(planes)*planar_features,
+                            nexus_features,
+                            num_classes),
+                torch.nn.Tanh(),
+                ClassLinear(nexus_features,
+                            nexus_features,
+                            num_classes),
+                torch.nn.Tanh())
 
         self.nexus_down = torch.nn.ModuleDict()
         for p in planes:
@@ -135,8 +153,6 @@ class NexusNet(torch.nn.Module):
                                            nexus_features,
                                            num_classes,
                                            aggr)
-
-        self.nexus_conv = Nexus3DConv(nexus_features, num_classes, aggr)
 
     def ckpt(self, fn: Callable, *args) -> Any:
         """
@@ -163,19 +179,29 @@ class NexusNet(torch.nn.Module):
             nexus: Nexus embedding tensor
         """
 
-        # project up to nexus space
-        n = [None] * len(self.nexus_down)
-        for i, p in enumerate(self.nexus_down):
-            n[i] = self.nexus_up(x=(self.up_proj(x[p]), nexus), edge_index=edge_index[p])
+        if self.mess3d:
+            # project up to nexus space
+            n = [None] * len(self.nexus_down)
+            for i, p in enumerate(self.nexus_down):
+                n[i] = self.nexus_up(x=(self.up_proj(x[p]), nexus), edge_index=edge_index[p])
 
-        # fuse plane projections into a single per-spacepoint embedding
-        x['sp'] = self.ckpt(self.nexus_net, torch.cat((torch.cat(n, dim=-1), x['sp']), dim=2))
+            # fuse plane projections into a single per-spacepoint embedding
+            x['sp'] = self.ckpt(self.nexus_net, torch.cat((torch.cat(n, dim=-1), x['sp']), dim=2))
 
-        # convolve among spacepoints over the 3D radius graph, so this
-        # iteration's fused embedding gets refined with spatial context from
-        # neighbouring spacepoints before being broadcast back down
-        x['sp'] = self.ckpt(self.nexus_conv, x['sp'], edge_index_3d)
+            # convolve among spacepoints over the 3D radius graph, so this
+            # iteration's fused embedding gets refined with spatial context
+            # from neighbouring spacepoints before being broadcast back down
+            x['sp'] = self.ckpt(self.nexus_conv, x['sp'], edge_index_3d)
+            nexus_out = x['sp']
+        else:
+            # project up to nexus space
+            n = [None] * len(self.nexus_down)
+            for i, p in enumerate(self.nexus_down):
+                n[i] = self.nexus_up(x=(x[p], nexus), edge_index=edge_index[p])
+
+            # convolve in nexus space
+            nexus_out = self.ckpt(self.nexus_net, torch.cat(n, dim=-1))
 
         # project back down to planes
         for p in self.nexus_down:
-            x[p] = self.ckpt(self.nexus_down[p], x[p], edge_index[p], x['sp'])
+            x[p] = self.ckpt(self.nexus_down[p], x[p], edge_index[p], nexus_out)

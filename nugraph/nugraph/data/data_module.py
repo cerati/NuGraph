@@ -28,6 +28,7 @@ class NuGraphDataModule(LightningDataModule):
                  shuffle: str = 'random',
                  balance_frac: float = 0.1,
                  nexus_k: int = 8,
+                 mess3d: bool = False,
                  featext: bool = False):
         super().__init__()
 
@@ -46,6 +47,7 @@ class NuGraphDataModule(LightningDataModule):
         self.shuffle = shuffle
         self.balance_frac = balance_frac
         self.nexus_k = nexus_k
+        self.mess3d = mess3d
         self.featext = featext
 
         with h5py.File(self.filename) as f:
@@ -96,7 +98,8 @@ class NuGraphDataModule(LightningDataModule):
 
         transform = []
         if model:
-            transform.append(model.transform(planes=self.planes, nexus_k=self.nexus_k))
+            transform.append(model.transform(planes=self.planes, nexus_k=self.nexus_k,
+                                             mess3d=self.mess3d))
         if self.featext:
             transform.append(FeatureExtension(planes=self.planes))
         transform = Compose(transform) if transform else None
@@ -191,6 +194,10 @@ class NuGraphDataModule(LightningDataModule):
                           help='Fraction of dataset to use for workload balancing')
         data.add_argument('--nexus-k', type=int, default=8,
                           help='Number of nearest neighbours for the 3D spacepoint graph')
+        data.add_argument('--3dmesspass', action='store_true', default=False,
+                          dest='mess3d',
+                          help='Enable nexus features, 3D kNN spacepoint '
+                               'graph, and message passing over it')
         data.add_argument('--featext', action='store_true', default=False,
                           help='Enable extended features')
         return parser

@@ -17,6 +17,8 @@ class Encoder(torch.nn.Module):
         nexus_features: Number of nexus node features
         planes: List of plane names
         classes: List of semantic class names
+        mess3d: Whether to build the spacepoint branch, for the 3D nexus
+            message-passing pathway
     """
     def __init__(self,
                  in_features: int,
@@ -24,7 +26,8 @@ class Encoder(torch.nn.Module):
                  sp_features: int,
                  nexus_features: int,
                  planes: list[str],
-                 classes: list[str]):
+                 classes: list[str],
+                 mess3d: bool = False):
         super().__init__()
 
         self.planes = planes
@@ -37,10 +40,11 @@ class Encoder(torch.nn.Module):
                 ClassLinear(in_features, node_features, self.num_classes),
                 torch.nn.Tanh())
 
-        self.net['sp'] = torch.nn.Sequential(
-            InputNorm(sp_features),
-            ClassLinear(sp_features, nexus_features, self.num_classes),
-            torch.nn.Tanh())
+        if mess3d:
+            self.net['sp'] = torch.nn.Sequential(
+                InputNorm(sp_features),
+                ClassLinear(sp_features, nexus_features, self.num_classes),
+                torch.nn.Tanh())
 
     def forward(self, x: dict[str, T]) -> dict[str, T]:
         """
