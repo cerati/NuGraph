@@ -20,10 +20,18 @@ class SpacePointGraph(BaseTransform):
 
     Args:
         k: Number of nearest neighbours to connect each spacepoint to
+        chunk_size: Number of query rows to compare against all spacepoints
+            at once. Crowded events can have tens of thousands of
+            spacepoints, and computing all pairwise distances in one shot is
+            quadratic in memory (e.g. ~9.3GB at n=50,000 for a single
+            event) — chunking the query rows bounds peak memory to
+            chunk_size * n instead, without changing the result: each row is
+            still compared against every candidate, just in row batches.
     '''
-    def __init__(self, k: int):
+    def __init__(self, k: int, chunk_size: int = 1024):
         super().__init__()
         self.k = k
+        self.chunk_size = chunk_size
 
     def forward(self, data: 'pyg.data.HeteroData') -> 'pyg.data.HeteroData':
         pos = data['sp'].pos
@@ -36,10 +44,19 @@ class SpacePointGraph(BaseTransform):
             data['sp', 'sp3d', 'sp'].edge_index = torch.empty((2, 0), dtype=torch.long)
             return data
 
-        # exclude self as a neighbour candidate, then take the k closest
-        dist = torch.cdist(pos, pos)
-        dist.fill_diagonal_(torch.inf)
-        neighbours = dist.topk(k, largest=False).indices # [n, k]
+        # equivalent to (but memory-bounded compared to):
+        #   dist = torch.cdist(pos, pos)
+        #   dist.fill_diagonal_(torch.inf)
+        #   neighbours = dist.topk(k, largest=False).indices
+        # each chunk still compares its rows against every one of the n
+        # spacepoints, so results are identical to the full-matrix form above
+        chunks = []
+        for start in range(0, n, self.chunk_size):
+            end = min(start + self.chunk_size, n)
+            dist = torch.cdist(pos[start:end], pos)
+            dist[torch.arange(end - start), torch.arange(start, end)] = torch.inf
+            chunks.append(dist.topk(k, largest=False).indices)
+        neighbours = torch.cat(chunks, dim=0) # [n, k]
 
         # for each node, k edges point in from its k nearest neighbours,
         # giving every node the exact same in-degree k (bar the n-1 clamp)
