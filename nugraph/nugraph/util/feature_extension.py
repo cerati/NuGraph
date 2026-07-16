@@ -72,4 +72,13 @@ class FeatureExtension(BaseTransform):
             # Extending the original node feature matrix with the new features
             x[:,-4:] = torch.cat(extended_vars, dim=-1)
 
+            # write the modified tensor back onto the graph: x is a fresh
+            # tensor (from concatenation or advanced indexing, neither of
+            # which return a view), so without this the computed features
+            # above are silently discarded
+            if "hit" in data.node_types:
+                data['hit'].x[idx] = x
+            else:
+                data[p].x = x
+
         return data
