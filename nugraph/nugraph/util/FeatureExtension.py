@@ -34,13 +34,13 @@ class FeatureExtension(BaseTransform):
             nodes_degree = log(nodes_degree) # Should I use log(nodes_degree) instead?
 
             ## Adding shortest edge length
-            #min_dist = dists_2closest_nodes[:,0].view(-1,1) # 'dists_2closest_nodes' is sorted in ascending order
+            min_dist = dists_2closest_nodes[:,0].view(-1,1) # 'dists_2closest_nodes' is sorted in ascending order
 
             # First remove the RMS
             data[p].x = data[p].x[:,:-1]
 
             # Extending the original node feature matrix with the new features
-            ##data[p].x = cat((data[p].x, dwire, dtime, nodes_degree, min_dist), dim=-1)
-            data[p].x = cat((data[p].x, dwire, dtime, nodes_degree), dim=-1)
+            data[p].x = cat((data[p].x, dwire, dtime, nodes_degree, min_dist), dim=-1)
+            #data[p].x = cat((data[p].x, dwire, dtime, nodes_degree), dim=-1)
 
         return data
