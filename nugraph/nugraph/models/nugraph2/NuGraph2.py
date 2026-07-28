@@ -49,17 +49,19 @@ class NuGraph2(LightningModule):
                                planes,
                                semantic_classes)
 
-        self.plane_net = PlaneNet(in_features,
-                                  planar_features,
-                                  len(semantic_classes),
-                                  planes,
-                                  checkpoint=checkpoint)
+        self.plane_net = torch.compile(PlaneNet(in_features,
+                                               planar_features,
+                                               len(semantic_classes),
+                                               planes,
+                                               checkpoint=checkpoint),
+                                      dynamic=True)
 
-        self.nexus_net = NexusNet(planar_features,
-                                  nexus_features,
-                                  len(semantic_classes),
-                                  planes,
-                                  checkpoint=checkpoint)
+        self.nexus_net = torch.compile(NexusNet(planar_features,
+                                                nexus_features,
+                                                len(semantic_classes),
+                                                planes,
+                                                checkpoint=checkpoint),
+                                       dynamic=True)
 
         self.decoders = []
 
@@ -87,11 +89,12 @@ class NuGraph2(LightningModule):
                 nexus: Tensor,
                 batch: dict[str, Tensor]) -> dict[str, Tensor]:
         m = self.encoder(x)
+        # shortcut tensors: x[p] is constant across iterations, precompute once
+        s = {p: x[p].detach().unsqueeze(1).expand(-1, len(self.semantic_classes), -1)
+             for p in self.planes}
         for _ in range(self.num_iters):
-            # shortcut connect features
-            for i, p in enumerate(self.planes):
-                s = x[p].detach().unsqueeze(1).expand(-1, m[p].size(1), -1)
-                m[p] = torch.cat((m[p], s), dim=-1)
+            for p in self.planes:
+                m[p] = torch.cat((m[p], s[p]), dim=-1)
             self.plane_net(m, edge_index_plane)
             self.nexus_net(m, edge_index_nexus, nexus)
         ret = {}

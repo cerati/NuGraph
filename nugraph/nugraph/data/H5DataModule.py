@@ -17,8 +17,9 @@ from ..util import PositionFeatures, FeatureNormMetric, FeatureNorm, FeatureExte
 class H5DataModule(LightningDataModule):
     """PyTorch Lightning data module for neutrino graph data."""
     def __init__(self,
-                 data_path: str,
-                 batch_size: int,
+                 data_path: str = "auto",
+                 batch_size: int = 64,
+                 num_workers: int = 8,
                  shuffle: str = 'random',
                  balance_frac: float = 0.1,
                  prepare: bool = False):
@@ -191,6 +192,8 @@ class H5DataModule(LightningDataModule):
                           help='Location of input data file')
         data.add_argument('--batch-size', type=int, default=64,
                           help='Size of each batch of graphs')
+        data.add_argument('--num-workers', type=int, default=8,
+                          help='Number of data loader worker processes')
         data.add_argument('--limit_train_batches', type=int, default=None,
                           help='Max number of training batches to be used')
         data.add_argument('--limit_val_batches', type=int, default=None,
