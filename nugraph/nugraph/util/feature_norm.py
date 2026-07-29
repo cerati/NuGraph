@@ -34,7 +34,7 @@ class FeatureNorm(BaseTransform):
         self.norm = norm
         self.planes = planes
 
-    def __call__(self, data: "pyg.data.HeteroData") -> "pyg.data.HeteroData":
+    def forward(self, data: "pyg.data.HeteroData") -> "pyg.data.HeteroData":
         for p in self.planes:
             mean, std = self.norm[p]
             data[p].x = (data[p].x - mean[None,:]) / std[None,:]
