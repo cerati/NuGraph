@@ -10,7 +10,7 @@ import nugraph as ng
 import signal
 
 torch.set_num_threads(4)
-
+torch.set_float32_matmul_precision('high')
 import warnings
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
 

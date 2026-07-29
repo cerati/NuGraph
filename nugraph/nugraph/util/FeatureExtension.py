@@ -16,7 +16,7 @@ class FeatureExtension(BaseTransform):
             wt_coords = stack((data.collect("pos")[p][:, 0], data.collect("pos")[p][:, 1]), dim=1) # [wire, time]
 
             # Calculating pairwise euclidean distances of nodes in the wire vs time space
-            dist_table = norm(wt_coords[:, None, :] - wt_coords[None, :, :], dim=-1)
+            dist_table = torch.cdist(wt_coords, wt_coords)
             dist_table.fill_diagonal_(float('inf'))
 
             # Find a (n_nodes, 2) matrix containing the distances and indexes of the two closest nodes to each node
@@ -37,7 +37,7 @@ class FeatureExtension(BaseTransform):
             min_dist = dists_2closest_nodes[:,0].view(-1,1) # 'dists_2closest_nodes' is sorted in ascending order
 
             # First remove the RMS
-            data[p].x = data[p].x[:,:-1]
+            # data[p].x = data[p].x[:,:-1]
 
             # Extending the original node feature matrix with the new features
             data[p].x = cat((data[p].x, dwire, dtime, nodes_degree, min_dist), dim=-1)
