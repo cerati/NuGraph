@@ -24,7 +24,7 @@ class NuGraphDataModule(LightningDataModule):
                  data_path: str = "auto",
                  model: type[torch.nn.Module] = None,
                  batch_size: int = 64,
-                 num_workers: int = 5,
+                 num_workers: int = 8,
                  shuffle: str = 'random',
                  balance_frac: float = 0.1,
                  nexus_k: int = 8,
@@ -98,8 +98,14 @@ class NuGraphDataModule(LightningDataModule):
 
         transform = []
         if model:
+            # load pre-computed feature normalization if present in the file
+            with h5py.File(self.filename) as f:
+                if 'norm' in f:
+                    norm = {p: torch.tensor(f[f'norm/{p}'][()]) for p in self.planes}
+                else:
+                    norm = None
             transform.append(model.transform(planes=self.planes, nexus_k=self.nexus_k,
-                                             mess3d=self.mess3d))
+                                             mess3d=self.mess3d, norm=norm))
         if self.featext:
             transform.append(FeatureExtension(planes=self.planes))
         transform = Compose(transform) if transform else None
@@ -169,11 +175,11 @@ class NuGraphDataModule(LightningDataModule):
 
     def val_dataloader(self) -> DataLoader:
         return DataLoader(self.val_dataset, num_workers=self.num_workers,
-                          batch_size=self.batch_size)
+                          batch_size=self.batch_size, pin_memory=True)
 
     def test_dataloader(self) -> DataLoader:
         return DataLoader(self.test_dataset, num_workers=self.num_workers,
-                          batch_size=self.batch_size)
+                          batch_size=self.batch_size, pin_memory=True)
 
     @staticmethod
     def add_data_args(parser: ArgumentParser) -> ArgumentParser:
@@ -182,7 +188,7 @@ class NuGraphDataModule(LightningDataModule):
                           help='Location of input data file')
         data.add_argument('--batch-size', type=int, default=64,
                           help='Size of each batch of graphs')
-        data.add_argument('--num-workers', type=int, default=5,
+        data.add_argument('--num-workers', type=int, default=8,
                           help='Number of data loader worker processes')
         data.add_argument('--limit_train_batches', type=int, default=None,
                           help='Max number of training batches to be used')

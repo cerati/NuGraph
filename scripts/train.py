@@ -12,13 +12,19 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import nugraph as ng
 
 torch.set_num_threads(4)
+torch.set_float32_matmul_precision('high')
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
 
 Data = ng.data.H5DataModule
-Model = ng.models.NuGraph2
 
 def configure():
+    # select model class before adding model-specific args
+    ng3 = '--nugraph3' in __import__('sys').argv
+    Model = ng.models.NuGraph3 if ng3 else ng.models.NuGraph2
+
     parser = argparse.ArgumentParser()
+    parser.add_argument('--nugraph3', action='store_true', default=False,
+                        help='Train NuGraph3 instead of NuGraph2 (default)')
     parser.add_argument('--device', type=int, default=None,
                         help="Index of GPU device to train with")
     parser.add_argument('--logger', type=str, default="tensorboard",
@@ -36,11 +42,14 @@ def configure():
                         help="write wandb logs offline")
     parser.add_argument('--profiler', type=str, default=None,
                         help='Enable requested profiler')
+    parser.add_argument('--precision', type=str, default='32',
+                        choices=('32', 'bf16-mixed'),
+                        help='Precision for training (default: 32, or bf16-mixed for AMP)')
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
-    return parser.parse_args()
+    return parser.parse_args(), Model
 
-def train(args):
+def train(args, Model):
 
     torch.manual_seed(1)
 
@@ -110,5 +119,5 @@ def train(args):
     trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
 
 if __name__ == '__main__':
-    args = configure()
-    train(args)
+    args, Model = configure()
+    train(args, Model)

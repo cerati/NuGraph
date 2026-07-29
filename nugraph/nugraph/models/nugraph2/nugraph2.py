@@ -76,19 +76,21 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
                                mess3d=mess3d)
 
 
-        self.plane_net = PlaneNet(in_features,
-                                  planar_features,
-                                  len(semantic_classes),
-                                  planes,
-                                  checkpoint=checkpoint)
+        self.plane_net = torch.compile(PlaneNet(in_features,
+                                               planar_features,
+                                               len(semantic_classes),
+                                               planes,
+                                               checkpoint=checkpoint),
+                                      dynamic=True)
 
-        self.nexus_net = NexusNet(sp_features,
-                                  planar_features,
-                                  nexus_features,
-                                  len(semantic_classes),
-                                  planes,
-                                  checkpoint=checkpoint,
-                                  mess3d=mess3d)
+        self.nexus_net = torch.compile(NexusNet(sp_features,
+                                                planar_features,
+                                                nexus_features,
+                                                len(semantic_classes),
+                                                planes,
+                                                checkpoint=checkpoint,
+                                                mess3d=mess3d),
+                                       dynamic=True)
 
         self.decoders = []
 
@@ -112,11 +114,12 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
     def forward(self, x: TD, edge_index_plane: TD, edge_index_nexus: TD, # pylint: disable=arguments-differ,too-many-arguments,too-many-positional-arguments
                 edge_index_3d: T, nexus: T, batch: TD) -> TD:
         m = self.encoder(x)
+        # shortcut tensors: x[p] is constant across iterations, precompute once
+        s = {p: x[p].detach().unsqueeze(1).expand(-1, len(self.semantic_classes), -1)
+             for p in self.planes}
         for _ in range(self.num_iters):
-            # shortcut connect features
             for p in self.planes:
-                s = x[p].detach().unsqueeze(1).expand(-1, m[p].size(1), -1)
-                m[p] = torch.cat((m[p], s), dim=-1)
+                m[p] = torch.cat((m[p], s[p]), dim=-1)
             self.plane_net(m, edge_index_plane)
 
             # shortcut connect features for nexus
@@ -240,8 +243,8 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
             return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
 
     @staticmethod
-    def transform(planes: tuple[str], nexus_k: int = 8,
-                  mess3d: bool = False) -> Compose:
+    def transform(planes: tuple[str], nexus_k: int = 8, mess3d: bool = False,
+                  norm: dict | None = None) -> Compose:
         """
         Return data transform for NuGraph2 model
 
@@ -249,8 +252,10 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
             planes: tuple of detector plane names
             nexus_k: number of nearest neighbours for the 3D spacepoint graph
             mess3d: whether to enable nexus features and the 3D spacepoint graph
+            norm: optional dict mapping plane name to [2, num_features] tensor
+                  (row 0 = mean, row 1 = std) for pre-computed feature normalization
         """
-        transforms = [Transform(planes)]
+        transforms = [Transform(planes, norm=norm)]
         if mess3d:
             transforms.append(NexusFeatures(planes))
             transforms.append(SpacePointGraph(nexus_k))

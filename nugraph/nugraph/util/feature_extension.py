@@ -45,8 +45,8 @@ class FeatureExtension(BaseTransform):
             # Extracting wire and time information
             wt_coords = torch.stack((pos[:, 0], pos[:, 1]), dim=1) # [wire, time]
 
-            # Calculating pairwise euclidean distances of nodes in the wire vs time space
-            dist_table = torch.norm(wt_coords[:, None, :] - wt_coords[None, :, :], dim=-1)
+            # Pairwise euclidean distances in wire-time space
+            dist_table = torch.cdist(wt_coords, wt_coords)
             dist_table.fill_diagonal_(float('inf'))
 
             # Find a (n_nodes, 2) matrix containing the distances and
@@ -64,18 +64,16 @@ class FeatureExtension(BaseTransform):
             # Adding node degree
             nodes_degree = torch.unique(edge.edge_index[0], sorted=True,
                                         return_counts=True)[1].view(-1,1)
-            extended_vars.append(torch.log(nodes_degree[idx]))
+            extended_vars.append(torch.log(nodes_degree[idx].clamp(min=1)))
 
             # Adding shortest edge length ('dists_2closest_nodes' is sorted in ascending order)
             extended_vars.append(dists_2closest_nodes[:,0].view(-1,1))
-
-            # Extending the original node feature matrix with the new features
-            x[:,-4:] = torch.cat(extended_vars, dim=-1)
 
             # write the modified tensor back onto the graph: x is a fresh
             # tensor (from concatenation or advanced indexing, neither of
             # which return a view), so without this the computed features
             # above are silently discarded
+            x[:,-4:] = torch.cat(extended_vars, dim=-1)
             if "hit" in data.node_types:
                 data['hit'].x[idx] = x
             else:
