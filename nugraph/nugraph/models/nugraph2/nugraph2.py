@@ -141,16 +141,13 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         else:
             batch = Batch.from_data_list([data])
 
-        # the 3D spacepoint graph and its features only exist if mess3d is
-        # enabled (see NuGraph2.transform); otherwise fall back to the
-        # original zero-width nexus placeholder, used purely as a shape
-        # reference for the bipartite up-projection in NexusNet
-        if self.mess3d:
-            edge_index_3d = batch['sp', 'sp3d', 'sp'].edge_index
-            nexus = batch['sp'].x
-        else:
-            edge_index_3d = None
-            nexus = torch.empty(batch['sp'].num_nodes, 0)
+        # the 3D kNN spacepoint graph only exists if mess3d is enabled (see
+        # NuGraph2.transform)
+        edge_index_3d = batch['sp', 'sp3d', 'sp'].edge_index if self.mess3d else None
+
+        # shape reference for the bipartite up-projection in NexusNet;
+        # its values are never read, only its node count
+        nexus = torch.empty(batch['sp'].num_nodes, 0)
 
         # unpack tensors to pass into forward function
         x = self(batch.collect('x'),
@@ -240,28 +237,31 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
 
     @staticmethod
     def transform(planes: tuple[str], nexus_k: int = 8, mess3d: bool = False,
-                  norm: dict | None = None) -> Compose:
+                  featext3d: bool = False, norm: dict | None = None) -> Compose:
         """
         Return data transform for NuGraph2 model
 
         Args:
             planes: tuple of detector plane names
             nexus_k: number of nearest neighbours for the 3D spacepoint graph
-            mess3d: whether to enable real spacepoint input features
-                (NexusFeatures) and the 3D kNN spacepoint graph for
-                MessagePassing3D; the persistent spacepoint embedding itself
-                (accumulated across iterations from planar contributions) is
-                always built, regardless of this flag
+            mess3d: whether to build the 3D kNN spacepoint graph and enable
+                MessagePassing3D; independent of featext3d — the persistent
+                spacepoint embedding itself (accumulated across iterations
+                from planar contributions) is always built either way
+            featext3d: whether to compute real spacepoint input features
+                (NexusFeatures: delta_T, chi2, x, y, z), usable with or
+                without mess3d
             norm: optional dict mapping plane name to [2, num_features] tensor
                   (row 0 = mean, row 1 = std) for pre-computed feature normalization;
                   an optional 'sp' entry normalizes real spacepoint features
-                  (only meaningful when mess3d is enabled)
+                  (only meaningful when featext3d is enabled)
         """
         transforms = [Transform(planes, norm=norm)]
-        if mess3d:
+        if featext3d:
             transforms.append(NexusFeatures(planes))
             if norm is not None and 'sp' in norm:
                 transforms.append(FeatureNorm(['sp'], {'sp': norm['sp']}))
+        if mess3d:
             transforms.append(SpacePointGraph(nexus_k))
         return Compose(transforms)
 
@@ -278,9 +278,9 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
                            help='Number of message-passing iterations')
         model.add_argument('--in-feats', type=int, default=4,
                            help='Number of input node features')
-        model.add_argument('--sp-feats', type=int, default=5,
+        model.add_argument('--in-sp-feats', type=int, default=5,
                            help='Number of real spacepoint input features '
-                                '(only used when --3dmesspass is enabled)')
+                                '(only used when --3dfeatext is enabled)')
         model.add_argument('--planar-feats', type=int, default=64,
                            help='Hidden dimensionality of planar convolutions')
         model.add_argument('--nexus-feats', type=int, default=16,
@@ -311,7 +311,7 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         """
         return cls(
             in_features=args.in_feats,
-            sp_features=args.sp_feats if args.mess3d else 0,
+            sp_features=args.in_sp_feats if args.featext3d else 0,
             planar_features=args.planar_feats,
             nexus_features=args.nexus_feats,
             planes=nudata.planes,

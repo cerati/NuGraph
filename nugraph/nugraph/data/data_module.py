@@ -29,6 +29,7 @@ class NuGraphDataModule(LightningDataModule):
                  balance_frac: float = 0.1,
                  nexus_k: int = 8,
                  mess3d: bool = False,
+                 featext3d: bool = False,
                  featext: bool = False):
         super().__init__()
 
@@ -48,6 +49,7 @@ class NuGraphDataModule(LightningDataModule):
         self.balance_frac = balance_frac
         self.nexus_k = nexus_k
         self.mess3d = mess3d
+        self.featext3d = featext3d
         self.featext = featext
 
         with h5py.File(self.filename) as f:
@@ -107,7 +109,8 @@ class NuGraphDataModule(LightningDataModule):
                 else:
                     norm = None
             transform.append(model.transform(planes=self.planes, nexus_k=self.nexus_k,
-                                             mess3d=self.mess3d, norm=norm))
+                                             mess3d=self.mess3d, featext3d=self.featext3d,
+                                             norm=norm))
         if self.featext:
             transform.append(FeatureExtension(planes=self.planes))
         transform = Compose(transform) if transform else None
@@ -243,8 +246,13 @@ class NuGraphDataModule(LightningDataModule):
                           help='Number of nearest neighbours for the 3D spacepoint graph')
         data.add_argument('--3dmesspass', action='store_true', default=False,
                           dest='mess3d',
-                          help='Enable nexus features, 3D kNN spacepoint '
-                               'graph, and message passing over it')
+                          help='Enable the 3D kNN spacepoint graph and '
+                               'message passing over it')
+        data.add_argument('--3dfeatext', action='store_true', default=False,
+                          dest='featext3d',
+                          help='Enable real spacepoint input features '
+                               '(delta_T, chi2, x, y, z), independent of '
+                               '--3dmesspass')
         data.add_argument('--featext', action='store_true', default=False,
                           help='Enable extended features')
         return parser

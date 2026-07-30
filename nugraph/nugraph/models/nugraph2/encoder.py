@@ -12,7 +12,7 @@ class Encoder(torch.nn.Module):
     Args:
         in_features: Number of input features
         node_features: Number of planar node features
-        sp_features: Number of spacepoint node features (0 unless mess3d
+        sp_features: Number of spacepoint node features (0 unless featext3d
             provides real spacepoint input features)
         nexus_features: Number of nexus node features
         planes: List of plane names

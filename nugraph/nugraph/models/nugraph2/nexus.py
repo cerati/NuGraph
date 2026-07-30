@@ -93,7 +93,7 @@ class NexusNet(torch.nn.Module):
 
     Args:
         sp_features: Number of real spacepoint input features (0 unless
-            mess3d provides them via NexusFeatures)
+            featext3d provides them via NexusFeatures)
         planar_features: Number of planar features
         nexus_features: Number of nexus features
         num_classes: Number of semantic classes

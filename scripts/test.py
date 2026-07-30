@@ -26,7 +26,8 @@ def test(args):
 
     print('data path =',args.data_path)
     nudata = Data(args.data_path, batch_size=args.batch_size,
-                  model=Model, nexus_k=args.nexus_k, mess3d=args.mess3d)
+                  model=Model, nexus_k=args.nexus_k, mess3d=args.mess3d,
+                  featext3d=args.featext3d)
 
     print('using checkpoint =',args.checkpoint)
     model = Model.load_from_checkpoint(args.checkpoint, map_location='cpu')
