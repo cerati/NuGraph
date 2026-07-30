@@ -115,15 +115,13 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         m = self.encoder(x)
         # shortcut tensors: x[p] is constant across iterations, precompute once
         s = {p: x[p].detach().unsqueeze(1).expand(-1, len(self.semantic_classes), -1)
-             for p in self.planes}
+             for p in (*self.planes, 'sp')}
         for _ in range(self.num_iters):
             for p in self.planes:
                 m[p] = torch.cat((m[p], s[p]), dim=-1)
             self.plane_net(m, edge_index_plane)
 
-            # shortcut connect features for nexus
-            s = x['sp'].detach().unsqueeze(1).expand(-1, m['sp'].size(1), -1)
-            m['sp'] = torch.cat((m['sp'], s), dim=-1)
+            m['sp'] = torch.cat((m['sp'], s['sp']), dim=-1)
             self.nexus_net(m, edge_index_nexus, edge_index_3d, nexus)
         ret = {}
         for decoder in self.decoders:
