@@ -181,18 +181,15 @@ class NexusNet(torch.nn.Module):
         for i, p in enumerate(self.nexus_down):
             n[i] = self.nexus_up(x=(x[p], nexus), edge_index=edge_index[p])
 
-        if self.mess3d:
-            # fuse plane projections into a single per-spacepoint embedding
-            x['sp'] = self.ckpt(self.nexus_net, torch.cat((torch.cat(n, dim=-1), x['sp']), dim=2))
+        # fuse plane projections into a single per-spacepoint embedding
+        x['sp'] = self.ckpt(self.nexus_net, torch.cat((torch.cat(n, dim=-1), x['sp']), dim=2))
 
-            # convolve among spacepoints over the 3D graph, so this
-            # iteration's fused embedding gets refined with spatial context
-            # from neighbouring spacepoints before being broadcast back down
+        # convolve among spacepoints over the 3D graph, so this
+        # iteration's fused embedding gets refined with spatial context
+        # from neighbouring spacepoints before being broadcast back down
+        if self.mess3d:
             x['sp'] = self.ckpt(self.nexus_conv, x['sp'], edge_index_3d)
-            nexus_out = x['sp']
-        else:
-            # convolve in nexus space
-            nexus_out = self.ckpt(self.nexus_net, torch.cat(n, dim=-1))
+        nexus_out = x['sp']
 
         # project back down to planes
         for p in self.nexus_down:

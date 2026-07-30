@@ -123,9 +123,8 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
             self.plane_net(m, edge_index_plane)
 
             # shortcut connect features for nexus
-            if self.mess3d:
-                s = x['sp'].detach().unsqueeze(1).expand(-1, m['sp'].size(1), -1)
-                m['sp'] = torch.cat((m['sp'], s), dim=-1)
+            s = x['sp'].detach().unsqueeze(1).expand(-1, m['sp'].size(1), -1)
+            m['sp'] = torch.cat((m['sp'], s), dim=-1)
             self.nexus_net(m, edge_index_nexus, edge_index_3d, nexus)
         ret = {}
         for decoder in self.decoders:

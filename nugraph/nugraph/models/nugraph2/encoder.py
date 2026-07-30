@@ -39,11 +39,10 @@ class Encoder(torch.nn.Module):
                 ClassLinear(in_features, node_features, self.num_classes),
                 torch.nn.Tanh())
 
-        if mess3d:
-            self.net['sp'] = torch.nn.Sequential(
-                InputNorm(sp_features),
-                ClassLinear(sp_features, nexus_features, self.num_classes),
-                torch.nn.Tanh())
+        self.net['sp'] = torch.nn.Sequential(
+            InputNorm(sp_features),
+            ClassLinear(sp_features, nexus_features, self.num_classes),
+            torch.nn.Tanh())
 
     def forward(self, x: dict[str, T]) -> dict[str, T]:
         """
