@@ -42,7 +42,7 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
     """
     def __init__(self, # pylint: disable=too-many-arguments,too-many-positional-arguments
                  in_features: int = 4,
-                 sp_features: int = 5,
+                 sp_features: int = 0,
                  planar_features: int = 64,
                  nexus_features: int = 16,
                  planes: tuple[str] = ('u','v','y'),
@@ -72,8 +72,7 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
                                sp_features,
                                nexus_features,
                                planes,
-                               semantic_classes,
-                               mess3d=mess3d)
+                               semantic_classes)
 
 
         self.plane_net = torch.compile(PlaneNet(in_features,
@@ -250,7 +249,11 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         Args:
             planes: tuple of detector plane names
             nexus_k: number of nearest neighbours for the 3D spacepoint graph
-            mess3d: whether to enable nexus features and the 3D spacepoint graph
+            mess3d: whether to enable real spacepoint input features
+                (NexusFeatures) and the 3D kNN spacepoint graph for
+                MessagePassing3D; the persistent spacepoint embedding itself
+                (accumulated across iterations from planar contributions) is
+                always built, regardless of this flag
             norm: optional dict mapping plane name to [2, num_features] tensor
                   (row 0 = mean, row 1 = std) for pre-computed feature normalization
         """
@@ -274,7 +277,8 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         model.add_argument('--in-feats', type=int, default=4,
                            help='Number of input node features')
         model.add_argument('--sp-feats', type=int, default=5,
-                           help='Number of spacepoint node features')
+                           help='Number of real spacepoint input features '
+                                '(only used when --3dmesspass is enabled)')
         model.add_argument('--planar-feats', type=int, default=64,
                            help='Hidden dimensionality of planar convolutions')
         model.add_argument('--nexus-feats', type=int, default=16,
@@ -305,7 +309,7 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         """
         return cls(
             in_features=args.in_feats,
-            sp_features=args.sp_feats,
+            sp_features=args.sp_feats if args.mess3d else 0,
             planar_features=args.planar_feats,
             nexus_features=args.nexus_feats,
             planes=nudata.planes,

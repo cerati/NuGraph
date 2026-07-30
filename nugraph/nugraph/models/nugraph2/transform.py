@@ -72,6 +72,12 @@ class Transform(BaseTransform):
             p = data[pname]
             p.x = torch.cat((p.pos, p.x), dim=-1)
 
+        # spacepoint nodes carry no input features by default 
+        # NexusFeatures  overwrites this with some input features when
+        # the 3D message passing is enabled
+        if not hasattr(data["sp"], "x"):
+            data["sp"].x = torch.empty((data["sp"].num_nodes, 0))
+
         # apply pre-computed feature normalization if available
         if self.feature_norm is not None:
             data = self.feature_norm(data)

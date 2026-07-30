@@ -92,17 +92,18 @@ class NexusNet(torch.nn.Module):
     Module to project to nexus space and mix detector planes
 
     Args:
-        sp_features: Number of spacepoint features
+        sp_features: Number of real spacepoint input features (0 unless
+            mess3d provides them via NexusFeatures)
         planar_features: Number of planar features
         nexus_features: Number of nexus features
         num_classes: Number of semantic classes
         planes: Tuple of plane names
         aggr: Message aggregation method
         checkpoint: Whether to use checkpointing
-        mess3d: Whether to enable the 3D spacepoint message-passing pathway
-            (persistent spacepoint embedding, up-projection and
-            MessagePassing3D); if disabled, this reverts to a simple per-iteration
-            projection to and from a shared nexus space
+        mess3d: Whether to enable MessagePassing3D over the 3D kNN
+            spacepoint graph; the persistent spacepoint embedding (fused
+            each iteration from planar contributions) is always built,
+            regardless of this flag
     """
     def __init__(self, # pylint: disable=too-many-arguments,too-many-positional-arguments
                  sp_features: int,
@@ -122,27 +123,18 @@ class NexusNet(torch.nn.Module):
 
         self.nexus_up = SimpleConv(node_dim=0)
 
+        self.nexus_net = torch.nn.Sequential(
+            ClassLinear(len(planes)*planar_features + nexus_features + sp_features,
+                        nexus_features,
+                        num_classes),
+            torch.nn.Tanh(),
+            ClassLinear(nexus_features,
+                        nexus_features,
+                        num_classes),
+            torch.nn.Tanh())
+
         if mess3d:
-            self.nexus_net = torch.nn.Sequential(
-                ClassLinear(len(planes)*planar_features + nexus_features + sp_features,
-                            nexus_features,
-                            num_classes),
-                torch.nn.Tanh(),
-                ClassLinear(nexus_features,
-                            nexus_features,
-                            num_classes),
-                torch.nn.Tanh())
             self.nexus_conv = MessagePassing3D(nexus_features, num_classes, aggr)
-        else:
-            self.nexus_net = torch.nn.Sequential(
-                ClassLinear(len(planes)*planar_features,
-                            nexus_features,
-                            num_classes),
-                torch.nn.Tanh(),
-                ClassLinear(nexus_features,
-                            nexus_features,
-                            num_classes),
-                torch.nn.Tanh())
 
         self.nexus_down = torch.nn.ModuleDict()
         for p in planes:

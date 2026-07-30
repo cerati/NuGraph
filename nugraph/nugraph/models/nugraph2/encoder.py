@@ -2,7 +2,6 @@
 import torch
 
 from .linear import ClassLinear
-from ...util import InputNorm
 
 T = torch.Tensor
 
@@ -13,12 +12,11 @@ class Encoder(torch.nn.Module):
     Args:
         in_features: Number of input features
         node_features: Number of planar node features
-        sp_features: Number of spacepoint node features
+        sp_features: Number of spacepoint node features (0 unless mess3d
+            provides real spacepoint input features)
         nexus_features: Number of nexus node features
         planes: List of plane names
         classes: List of semantic class names
-        mess3d: Whether to build the spacepoint branch, for the 3D nexus
-            message-passing pathway
     """
     def __init__(self,
                  in_features: int,
@@ -26,8 +24,7 @@ class Encoder(torch.nn.Module):
                  sp_features: int,
                  nexus_features: int,
                  planes: list[str],
-                 classes: list[str],
-                 mess3d: bool = False):
+                 classes: list[str]):
         super().__init__()
 
         self.planes = planes
@@ -39,8 +36,11 @@ class Encoder(torch.nn.Module):
                 ClassLinear(in_features, node_features, self.num_classes),
                 torch.nn.Tanh())
 
+        # no InputNorm here: spacepoint features (when present at all) are
+        # normalized upstream via precomputed FeatureNorm-style stats, not
+        # rolling running stats, to avoid the same batch-order-dependent
+        # drift that rolling InputNorm caused for planar features
         self.net['sp'] = torch.nn.Sequential(
-            InputNorm(sp_features),
             ClassLinear(sp_features, nexus_features, self.num_classes),
             torch.nn.Tanh())
 
