@@ -2,6 +2,7 @@
 import torch
 
 from .linear import ClassLinear
+from ...util import InputNorm
 
 T = torch.Tensor
 
@@ -30,16 +31,15 @@ class Encoder(torch.nn.Module):
         self.planes = planes
         self.num_classes = len(classes)
 
+        self.input_norm = torch.nn.ModuleDict()
         self.net = torch.nn.ModuleDict()
         for p in planes:
+            self.input_norm[p] = InputNorm(in_features)
             self.net[p] = torch.nn.Sequential(
                 ClassLinear(in_features, node_features, self.num_classes),
                 torch.nn.Tanh())
 
-        # no InputNorm here: spacepoint features (when present at all) are
-        # normalized upstream via precomputed FeatureNorm-style stats, not
-        # rolling running stats, to avoid the same batch-order-dependent
-        # drift that rolling InputNorm caused for planar features
+        self.input_norm['sp'] = InputNorm(sp_features)
         self.net['sp'] = torch.nn.Sequential(
             ClassLinear(sp_features, nexus_features, self.num_classes),
             torch.nn.Tanh())
@@ -53,5 +53,6 @@ class Encoder(torch.nn.Module):
         """
         ret = {}
         for p, net in self.net.items():
+            x[p] = self.input_norm[p](x[p])
             ret[p] = net(x[p].unsqueeze(1).expand(-1, self.num_classes, -1))
         return ret

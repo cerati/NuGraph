@@ -15,7 +15,7 @@ from .decoders import SemanticDecoder, FilterDecoder
 from .transform import Transform
 
 from ...data import H5DataModule
-from ...util import NexusFeatures, SpacePointGraph, FeatureNorm
+from ...util import NexusFeatures, SpacePointGraph, InputNorm
 
 T = torch.Tensor
 TD = dict[str, T]
@@ -192,6 +192,11 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         self.log('loss/train', total_loss, batch_size=batch.num_graphs, prog_bar=True, sync_dist=True)
         return total_loss
 
+    def on_train_epoch_end(self) -> None:
+        for module in self.modules():
+            if isinstance(module, InputNorm):
+                module.update = False
+
     def validation_step(self, batch) -> None: # pylint: disable=arguments-differ
         self.step(batch)
         total_loss = 0.
@@ -237,7 +242,7 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
 
     @staticmethod
     def transform(planes: tuple[str], nexus_k: int = 8, mess3d: bool = False,
-                  featext3d: bool = False, norm: dict | None = None) -> Compose:
+                  featext3d: bool = False) -> Compose:
         """
         Return data transform for NuGraph2 model
 
@@ -251,16 +256,10 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
             featext3d: whether to compute real spacepoint input features
                 (NexusFeatures: delta_T, chi2, x, y, z), usable with or
                 without mess3d
-            norm: optional dict mapping plane name to [2, num_features] tensor
-                  (row 0 = mean, row 1 = std) for pre-computed feature normalization;
-                  an optional 'sp' entry normalizes real spacepoint features
-                  (only meaningful when featext3d is enabled)
         """
-        transforms = [Transform(planes, norm=norm)]
+        transforms = [Transform(planes)]
         if featext3d:
             transforms.append(NexusFeatures(planes))
-            if norm is not None and 'sp' in norm:
-                transforms.append(FeatureNorm(['sp'], {'sp': norm['sp']}))
         if mess3d:
             transforms.append(SpacePointGraph(nexus_k))
         return Compose(transforms)
