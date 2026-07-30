@@ -13,7 +13,7 @@ from torch_geometric.transforms import Compose
 from pytorch_lightning import LightningDataModule
 
 from ..data import NuGraphDataset, BalanceSampler
-from ..util import PositionFeatures, FeatureExtension
+from ..util import PositionFeatures, FeatureExtension, NexusFeatures, FeatureNormMetric
 
 DEFAULT_DATA = ("$NUGRAPH_DATA/uboone-opendata/"
                 "uboone-opendata-19be46d89d0f22f5a78641d724c1fedd.gnn.h5")
@@ -102,6 +102,8 @@ class NuGraphDataModule(LightningDataModule):
             with h5py.File(self.filename) as f:
                 if 'norm' in f:
                     norm = {p: torch.tensor(f[f'norm/{p}'][()]) for p in self.planes}
+                    if 'norm/sp' in f:
+                        norm['sp'] = torch.tensor(f['norm/sp'][()])
                 else:
                     norm = None
             transform.append(model.transform(planes=self.planes, nexus_k=self.nexus_k,
@@ -155,6 +157,45 @@ class NuGraphDataModule(LightningDataModule):
         del dataset
         with h5py.File(data_path, "r+") as f:
             f.create_dataset('datasize/train', data=dsize)
+
+    @staticmethod
+    def generate_norm(data_path: str):
+        """
+        Compute precomputed per-feature normalization statistics for
+        spacepoint features (delta_T, chi2, x, y, z) over the training
+        split, and write them to the "norm/sp" dataset in the HDF5 file.
+        Mirrors the precomputed z-score normalization already used for
+        planar features, rather than the rolling InputNorm approach.
+
+        Args:
+            data_path: Path to HDF5 file
+        """
+        # deferred import: models.nugraph2 imports NuGraphDataModule, so this
+        # can't be a top-level import without creating a circular import
+        from ..models.nugraph2.transform import Transform
+
+        with h5py.File(data_path) as f:
+            try:
+                planes = f['planes'].asstr()[()].tolist()
+                train_samples = f['samples/train'].asstr()[()]
+            except KeyError:
+                print(('"planes" and "samples/train" are required! Call '
+                       '"generate_samples" first.'))
+                sys.exit()
+
+        transform = Compose([Transform(planes), NexusFeatures(planes)])
+        dataset = NuGraphDataset(data_path, train_samples, transform)
+
+        metric = FeatureNormMetric(num_features=5)
+        for data in tqdm.tqdm(dataset):
+            metric.update(data['sp'].x)
+        norm = metric.compute()
+        del dataset
+
+        with h5py.File(data_path, "r+") as f:
+            if 'norm/sp' in f:
+                del f['norm/sp']
+            f.create_dataset('norm/sp', data=norm.numpy())
 
     def train_dataloader(self) -> DataLoader:
         if self.shuffle == 'balance':

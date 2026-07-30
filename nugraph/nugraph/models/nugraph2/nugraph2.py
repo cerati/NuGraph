@@ -15,7 +15,7 @@ from .decoders import SemanticDecoder, FilterDecoder
 from .transform import Transform
 
 from ...data import H5DataModule
-from ...util import NexusFeatures, SpacePointGraph
+from ...util import NexusFeatures, SpacePointGraph, FeatureNorm
 
 T = torch.Tensor
 TD = dict[str, T]
@@ -253,11 +253,15 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
                 (accumulated across iterations from planar contributions) is
                 always built, regardless of this flag
             norm: optional dict mapping plane name to [2, num_features] tensor
-                  (row 0 = mean, row 1 = std) for pre-computed feature normalization
+                  (row 0 = mean, row 1 = std) for pre-computed feature normalization;
+                  an optional 'sp' entry normalizes real spacepoint features
+                  (only meaningful when mess3d is enabled)
         """
         transforms = [Transform(planes, norm=norm)]
         if mess3d:
             transforms.append(NexusFeatures(planes))
+            if norm is not None and 'sp' in norm:
+                transforms.append(FeatureNorm(['sp'], {'sp': norm['sp']}))
             transforms.append(SpacePointGraph(nexus_k))
         return Compose(transforms)
 
