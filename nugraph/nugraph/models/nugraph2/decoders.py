@@ -100,7 +100,7 @@ class DecoderBase(torch.nn.Module, ABC):
             epoch: Epoch number
         """
         for name, cm in self.cm.items():
-            self.cm_logger.log(name, stage, cm, logger, epoch)
+            self.cm_logger.log(f"{name}-{stage}", cm=cm, logger=logger, epoch=epoch, stage=stage)
 
 class SemanticDecoder(DecoderBase):
     """
@@ -127,10 +127,6 @@ class SemanticDecoder(DecoderBase):
         super().__init__('semantic', planes, semantic_classes,
                          RecallLoss(num_classes=len(semantic_classes)), 2., 0., metric_args)
 
-        # per-class recall/precision
-        self.recall_class = tm.Recall(**metric_args, average=None)
-        self.precision_class = tm.Precision(**metric_args, average=None)
-
         self.net = torch.nn.ModuleDict()
         for p in planes:
             self.net[p] = ClassLinear(node_features, 1, len(semantic_classes))
@@ -150,15 +146,6 @@ class SemanticDecoder(DecoderBase):
         y = torch.cat([data[p].y_semantic for p in self.planes], dim=0)
         y[y >= len(self.classes)] = -1
         return x, y
-
-    def metrics(self, x: T, y: T, stage: str) -> dict[str, Any]:
-        metrics = super().metrics(x, y, stage)
-        recall = self.recall_class(x, y)
-        precision = self.precision_class(x, y)
-        for i, c in enumerate(self.classes):
-            metrics[f"semantic_per_class/recall-{stage}/{c}"] = recall[i]
-            metrics[f"semantic_per_class/precision-{stage}/{c}"] = precision[i]
-        return metrics
 
 class FilterDecoder(DecoderBase):
     """

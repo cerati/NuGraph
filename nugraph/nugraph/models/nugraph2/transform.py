@@ -51,16 +51,9 @@ class Transform(BaseTransform):
                     size=(h.num_nodes, n_sp), relabel_nodes=True)
                 data[pname, "nexus", "sp"].edge_index = edge_index
 
-        # ensure event truth labels have correct format. some events in a
-        # dataset may lack a label (e.g. not processed with an event
-        # labeller); fill those with the -1 "invalid" sentinel used
-        # elsewhere in this codebase, since PyG's batch collation requires
-        # this attribute to be uniformly present across every graph in a
-        # batch, not merely present-when-available
+        # ensure event truth labels have correct format
         evt = data["evt"]
-        if not hasattr(evt, "y"):
-            evt.y = torch.tensor([-1])
-        elif not evt.y.ndim:
+        if not evt.y.ndim:
             evt.y = evt.y.reshape([1])
 
         # concatenate position tensor onto node features

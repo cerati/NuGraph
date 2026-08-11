@@ -120,7 +120,6 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         filter_head: Whether to enable filter decoder
         checkpoint: Whether to use checkpointing during training
         lr: Maximum learning rate
-        no_one_cycle_sched: Whether to disable the OneCycleLR scheduler
     """
     def __init__(self, # pylint: disable=too-many-arguments,too-many-positional-arguments
                  in_features: int = 4,
@@ -134,7 +133,6 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
                  filter_head: bool = True,
                  checkpoint: bool = False,
                  lr: float = 0.001,
-                 no_one_cycle_sched: bool = False,
                  mess3d: bool = False,
                  nexus_k: int = 8):
         super().__init__()
@@ -147,7 +145,6 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         self.semantic_classes = semantic_classes
         self.num_iters = num_iters
         self.lr = lr
-        self.no_one_cycle_sched = no_one_cycle_sched
         self.mess3d = mess3d
         self.nexus_k = nexus_k
 
@@ -315,14 +312,10 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
 
     def configure_optimizers(self) -> tuple:
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr)
-        if self.no_one_cycle_sched:
-            return optimizer
-        else:
-            onecycle = torch.optim.lr_scheduler.OneCycleLR(
-                    optimizer,
-                    max_lr=self.lr,
-                    total_steps=self.trainer.estimated_stepping_batches)
-            return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
+        onecycle = torch.optim.lr_scheduler.OneCycleLR(
+                optimizer, max_lr=self.lr,
+                total_steps=self.trainer.estimated_stepping_batches)
+        return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
 
     def export(self) -> torch.jit.ScriptModule:
         """
@@ -410,9 +403,6 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
                            help='Maximum number of epochs to train for')
         model.add_argument('--learning-rate', type=float, default=0.001,
                            help='Max learning rate during training')
-        model.add_argument('--no-lr-scheduler', action='store_true',
-                           dest='no_one_cycle_sched',
-                           help='Disable OneCycleLR scheduler')
         return parser
 
     @classmethod
@@ -436,6 +426,5 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
             filter_head=args.filter,
             checkpoint=not args.no_checkpointing,
             lr=args.learning_rate,
-            no_one_cycle_sched=args.no_one_cycle_sched,
             mess3d=args.mess3d,
             nexus_k=args.nexus_k)
