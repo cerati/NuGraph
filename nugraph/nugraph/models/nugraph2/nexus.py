@@ -1,5 +1,4 @@
 """NuGraph2 nexus module"""
-from typing import Any, Callable
 import torch
 from torch_geometric.nn import MessagePassing, SimpleConv
 from .linear import ClassLinear
@@ -143,21 +142,7 @@ class NexusNet(torch.nn.Module):
                                            num_classes,
                                            aggr)
 
-    def ckpt(self, fn: Callable, *args) -> Any:
-        """
-        NuGraph2 nexus module checkpointing function
-
-        Args:
-            fn: Module to checkpoint
-            args: Module arguments
-        """
-        if self.checkpoint and self.training:
-            return torch.utils.checkpoint.checkpoint(fn, *args, use_reentrant=False)
-
-        return fn(*args)
-
-    def forward(self, x: dict[str, T], edge_index: dict[str, T], # pylint: disable=arguments-differ,too-many-arguments,too-many-positional-arguments
-                edge_index_3d: T, nexus: T) -> None:
+    def forward(self, x: dict[str, T], edge_index: dict[str, T], edge_index_3d: T, nexus: T) -> None:
         """
         NuGraph2 nexus module forward pass
 
@@ -169,20 +154,31 @@ class NexusNet(torch.nn.Module):
         """
 
         # project up to nexus space
-        n = [None] * len(self.nexus_down)
+        n: list[T] = [torch.empty(0)] * len(self.nexus_down)
         for i, p in enumerate(self.nexus_down):
             n[i] = self.nexus_up(x=(x[p], nexus), edge_index=edge_index[p])
 
-        # fuse plane projections into a single per-spacepoint embedding
-        x['sp'] = self.ckpt(self.nexus_net, torch.cat((torch.cat(n, dim=-1), x['sp']), dim=2))
+        # fuse plane projections into a single per-spacepoint embedding;
+        # torch.jit.is_scripting() guard makes checkpoint branch dead code at compile time
+        x_cat = torch.cat((torch.cat(n, dim=-1), x['sp']), dim=-1)
+        if not torch.jit.is_scripting() and self.checkpoint and self.training:
+            x['sp'] = torch.utils.checkpoint.checkpoint(self.nexus_net, x_cat, use_reentrant=False)
+        else:
+            x['sp'] = self.nexus_net(x_cat)
 
         # convolve among spacepoints over the 3D graph, so this
         # iteration's fused embedding gets refined with spatial context
         # from neighbouring spacepoints before being broadcast back down
         if self.mess3d:
-            x['sp'] = self.ckpt(self.nexus_conv, x['sp'], edge_index_3d)
+            if not torch.jit.is_scripting() and self.checkpoint and self.training:
+                x['sp'] = torch.utils.checkpoint.checkpoint(self.nexus_conv, x['sp'], edge_index_3d, use_reentrant=False)
+            else:
+                x['sp'] = self.nexus_conv(x['sp'], edge_index_3d)
         nexus_out = x['sp']
 
         # project back down to planes
-        for p in self.nexus_down:
-            x[p] = self.ckpt(self.nexus_down[p], x[p], edge_index[p], nexus_out)
+        for p, net in self.nexus_down.items():
+            if not torch.jit.is_scripting() and self.checkpoint and self.training:
+                x[p] = torch.utils.checkpoint.checkpoint(net, x[p], edge_index[p], nexus_out, use_reentrant=False)
+            else:
+                x[p] = net.forward(x[p], edge_index[p], nexus_out)

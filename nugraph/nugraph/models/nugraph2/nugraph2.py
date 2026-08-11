@@ -1,6 +1,7 @@
 """NuGraph2 network architecture module"""
 import argparse
 import warnings
+import copy
 
 import torch
 from pytorch_lightning import LightningModule
@@ -19,6 +20,87 @@ from ...util import NexusFeatures, SpacePointGraph, InputNorm
 
 T = torch.Tensor
 TD = dict[str, T]
+
+class NuGraph2InferenceModule(torch.nn.Module):
+    """
+    Thin TorchScript-compatible wrapper around NuGraph2 for inference export.
+
+    Holds unwrapped (non-compiled) submodules and exposes a forward method
+    that can be scripted with torch.jit.script. Decoder calls are hardcoded
+    to avoid ABC/torchmetrics scripting issues.
+    """
+    planes: list[str]
+    semantic_classes: list[str]
+
+    def __init__(self, encoder, plane_net, nexus_net,
+                 semantic_decoder, filter_decoder,
+                 planes: list[str], semantic_classes: list[str], num_iters: int,
+                 mess3d: bool = False, nexus_k: int = 8):
+        super().__init__()
+        self.encoder = encoder
+        self.plane_net = plane_net
+        self.nexus_net = nexus_net
+        self.semantic_decoder = semantic_decoder
+        self.filter_decoder = filter_decoder
+        self.planes = planes
+        self.semantic_classes = semantic_classes
+        self.num_iters: int = num_iters
+        self.mess3d: bool = mess3d
+        self.nexus_k: int = nexus_k
+
+    def _build_sp3d_edges(self, pos: torch.Tensor) -> torch.Tensor:
+        """Build kNN edges over spacepoints from their 3D positions.
+
+        Replicates SpacePointGraph in a TorchScript-compatible form so that
+        mess3d inference works without requiring the edge index as an input.
+        pos is expected to be shape [n_sp, 3] (x, y, z coordinates).
+        """
+        n: int = pos.size(0)
+        k: int = min(self.nexus_k, n - 1)
+        if k <= 0:
+            return torch.empty(2, 0, dtype=torch.long, device=pos.device)
+
+        chunk_size: int = 1024
+        chunks: list[torch.Tensor] = []
+        for start in range(0, n, chunk_size):
+            end: int = min(start + chunk_size, n)
+            dist = torch.cdist(pos[start:end], pos)
+            dist[torch.arange(end - start, device=pos.device),
+                 torch.arange(start, end, device=pos.device)] = float('inf')
+            chunks.append(dist.topk(k, largest=False).indices)
+        neighbours = torch.cat(chunks, dim=0)  # [n, k]
+
+        dst = torch.arange(n, device=pos.device).view(-1, 1).expand(-1, k).reshape(-1)
+        src = neighbours.reshape(-1)
+        return torch.stack((src, dst), dim=0)
+
+    def forward(self, x: dict[str, torch.Tensor],
+                edge_index_plane: dict[str, torch.Tensor],
+                edge_index_nexus: dict[str, torch.Tensor],
+                nexus: torch.Tensor,
+                batch: dict[str, torch.Tensor]) -> dict[str, dict[str, torch.Tensor]]:
+        m = self.encoder(x)
+        # precompute per-plane and sp shortcut tensors (constant across iterations)
+        s: dict[str, torch.Tensor] = {}
+        for p in self.planes:
+            s[p] = x[p].detach().unsqueeze(1).expand(-1, len(self.semantic_classes), -1)
+        s['sp'] = x['sp'].detach().unsqueeze(1).expand(-1, len(self.semantic_classes), -1)
+        # build 3D spacepoint kNN graph from xyz positions (last 3 cols of x['sp'])
+        # or use an empty graph when mess3d is disabled
+        if self.mess3d:
+            edge_index_3d = self._build_sp3d_edges(x['sp'][:, 2:])
+        else:
+            edge_index_3d = torch.zeros(2, 0, dtype=torch.long, device=nexus.device)
+        for _ in range(self.num_iters):
+            for p in self.planes:
+                m[p] = torch.cat((m[p], s[p]), dim=-1)
+            self.plane_net(m, edge_index_plane)
+            m['sp'] = torch.cat((m['sp'], s['sp']), dim=-1)
+            self.nexus_net(m, edge_index_nexus, edge_index_3d, nexus)
+        ret: dict[str, dict[str, torch.Tensor]] = {}
+        ret.update(self.semantic_decoder(m, batch))
+        ret.update(self.filter_decoder(m, batch))
+        return ret
 
 class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
     """
@@ -53,7 +135,8 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
                  checkpoint: bool = False,
                  lr: float = 0.001,
                  no_one_cycle_sched: bool = False,
-                 mess3d: bool = False):
+                 mess3d: bool = False,
+                 nexus_k: int = 8):
         super().__init__()
 
         warnings.filterwarnings("ignore", ".*NaN values found in confusion matrix.*")
@@ -66,6 +149,7 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         self.lr = lr
         self.no_one_cycle_sched = no_one_cycle_sched
         self.mess3d = mess3d
+        self.nexus_k = nexus_k
 
         self.encoder = Encoder(in_features,
                                planar_features,
@@ -240,6 +324,38 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
                     total_steps=self.trainer.estimated_stepping_batches)
             return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
 
+    def export(self) -> torch.jit.ScriptModule:
+        """
+        Export a TorchScript-compatible module for inference.
+
+        Unwraps torch.compile, freezes InputNorm statistics, and returns
+        a scripted NuGraph2InferenceModule ready for torch.jit.save.
+        """
+
+        semantic_decoder = copy.deepcopy(self.semantic_decoder)
+        filter_decoder = copy.deepcopy(self.filter_decoder)
+
+        for decoder in (semantic_decoder, filter_decoder):
+            del decoder.recall
+            del decoder.precision
+            del decoder.cm
+            del decoder.cm_logger
+            del decoder.loss_func
+
+        m = NuGraph2InferenceModule(
+            encoder=self.encoder,
+            plane_net=self.plane_net._orig_mod,
+            nexus_net=self.nexus_net._orig_mod,
+            semantic_decoder=semantic_decoder,
+            filter_decoder=filter_decoder,
+            planes=list(self.planes),
+            semantic_classes=list(self.semantic_classes),
+            num_iters=self.num_iters,
+            mess3d=self.mess3d,
+            nexus_k=self.nexus_k)
+        m.eval()
+        return torch.jit.script(m)
+
     @staticmethod
     def transform(planes: tuple[str], nexus_k: int = 8, mess3d: bool = False,
                   featext3d: bool = False) -> Compose:
@@ -321,4 +437,5 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
             checkpoint=not args.no_checkpointing,
             lr=args.learning_rate,
             no_one_cycle_sched=args.no_one_cycle_sched,
-            mess3d=args.mess3d)
+            mess3d=args.mess3d,
+            nexus_k=args.nexus_k)
