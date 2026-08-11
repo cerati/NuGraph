@@ -19,12 +19,12 @@ Data = ng.data.H5DataModule
 
 def configure():
     # select model class before adding model-specific args
-    ng3 = '--nugraph3' in __import__('sys').argv
-    Model = ng.models.NuGraph3 if ng3 else ng.models.NuGraph2
+    ng2 = '--nugraph2' in __import__('sys').argv
+    Model = ng.models.NuGraph2 if ng2 else ng.models.NuGraph3
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--nugraph3', action='store_true', default=False,
-                        help='Train NuGraph3 instead of NuGraph2 (default)')
+    parser.add_argument('--nugraph2', action='store_true', default=False,
+                        help='Train NuGraph2 instead of NuGraph3 (default)')
     parser.add_argument('--device', type=int, default=None,
                         help="Index of GPU device to train with")
     parser.add_argument('--logger', type=str, default="tensorboard",
