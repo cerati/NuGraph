@@ -12,6 +12,7 @@ from .types import Data
 from .transform import Transform
 from .encoder import Encoder
 from .core import NuGraphCore
+from ...util import NexusFeatures, SpacePointGraph
 from .decoders import (SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder,
                        SpacepointDecoder)
 
@@ -43,6 +44,7 @@ class NuGraph3(LightningModule):
     """
     def __init__(self,
                  in_features: int = 4,
+                 sp_features: int = 0,
                  hit_features: int = 128,
                  nexus_features: int = 32,
                  interaction_features: int = 32,
@@ -60,7 +62,9 @@ class NuGraph3(LightningModule):
                  particle_loss: bool = False,
                  use_checkpointing: bool = False,
                  lr: float = 0.001,
-                 no_one_cycle_sched: bool = False):
+                 no_one_cycle_sched: bool = False,
+                 mess3d: bool = False,
+                 nexus_k: int = 8):
         super().__init__()
 
         warnings.filterwarnings("ignore", ".*NaN values found in confusion matrix.*")
@@ -75,15 +79,19 @@ class NuGraph3(LightningModule):
         self.num_iters = num_iters
         self.lr = lr
         self.no_one_cycle_sched = no_one_cycle_sched
+        self.mess3d = mess3d
+        self.nexus_k = nexus_k
 
         self.encoder = Encoder(in_features, hit_features,
-                               nexus_features, interaction_features, instance_features)
+                               nexus_features, interaction_features,
+                               instance_features, sp_features)
 
         self.core_net = NuGraphCore(hit_features,
                                     nexus_features,
                                     interaction_features,
                                     instance_features,
-                                    use_checkpointing)
+                                    use_checkpointing,
+                                    mess3d)
 
         self.decoders = []
 
@@ -194,14 +202,28 @@ class NuGraph3(LightningModule):
             return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
 
     @staticmethod
-    def transform(planes: tuple[str]) -> Transform:
+    def transform(planes: tuple[str], nexus_k: int = 8, mess3d: bool = False,
+                  featext3d: bool = False) -> Transform:
         """
         Return data transform for NuGraph3 model
 
         Args:
             planes: tuple of detector plane names
+            nexus_k: number of nearest neighbours for the 3D spacepoint graph
+            mess3d: whether to build the 3D kNN spacepoint graph
+            featext3d: whether to compute real spacepoint input features
+                (NexusFeatures: delta_T, chi2, x, y, z)
         """
-        return Transform(planes)
+        from torch_geometric.transforms import Compose
+        # NexusFeatures runs before Transform so it operates on per-plane stores;
+        # it also supports the merged format (after Transform) if needed
+        transforms = []
+        if featext3d:
+            transforms.append(NexusFeatures(planes))
+        transforms.append(Transform(planes))
+        if mess3d:
+            transforms.append(SpacePointGraph(nexus_k))
+        return Compose(transforms)
 
     @staticmethod
     def add_model_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -216,6 +238,9 @@ class NuGraph3(LightningModule):
                            help='Number of message-passing iterations')
         model.add_argument('--in-feats', type=int, default=5,
                            help='Number of input node features')
+        model.add_argument('--in-sp-feats', type=int, default=5,
+                           help='Number of real spacepoint input features '
+                                '(only used when --3dfeatext is enabled)')
         model.add_argument('--hit-feats', type=int, default=128,
                            help='Hidden dimensionality of hit convolutions')
         model.add_argument('--nexus-feats', type=int, default=32,
@@ -261,6 +286,7 @@ class NuGraph3(LightningModule):
         """
         return cls(
             in_features=args.in_feats,
+            sp_features=args.in_sp_feats if args.featext3d else 0,
             hit_features=args.hit_feats,
             nexus_features=args.nexus_feats,
             interaction_features=args.interaction_feats,
@@ -278,4 +304,6 @@ class NuGraph3(LightningModule):
             particle_loss=args.particle_loss,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate,
-            no_one_cycle_sched=args.no_one_cycle_sched)
+            no_one_cycle_sched=args.no_one_cycle_sched,
+            mess3d=args.mess3d,
+            nexus_k=args.nexus_k)

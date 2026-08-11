@@ -77,7 +77,7 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
 class NuGraphCore(nn.Module):
     """
     NuGraph core message-passing engine
-    
+
     This is the core NuGraph message-passing loop
 
     Args:
@@ -85,16 +85,21 @@ class NuGraphCore(nn.Module):
         nexus_features: Number of features in nexus embedding
         interaction_features: Number of features in interaction embedding
         use_checkpointing: Whether to use checkpointing
+        mess3d: Whether to add a sp→sp message-passing step over the 3D
+            kNN spacepoint graph, after plane_to_nexus and before
+            nexus_to_interaction
     """
     def __init__(self,
                  hit_features: int,
                  nexus_features: int,
                  interaction_features: int,
                  instance_features: int,
-                 use_checkpointing: bool = True):
+                 use_checkpointing: bool = True,
+                 mess3d: bool = False):
         super().__init__()
 
         self.use_checkpointing = use_checkpointing
+        self.mess3d = mess3d
 
         # internal planar message-passing
         self.plane_net = NuGraphBlock(hit_features, hit_features,
@@ -103,6 +108,11 @@ class NuGraphCore(nn.Module):
         # message-passing from planar nodes to nexus nodes
         self.plane_to_nexus = NuGraphBlock(hit_features, nexus_features,
                                            nexus_features)
+
+        # optional sp→sp message-passing over the 3D kNN spacepoint graph
+        if mess3d:
+            self.sp_to_sp = NuGraphBlock(nexus_features, nexus_features,
+                                         nexus_features)
 
         # message-passing from nexus nodes to interaction nodes
         self.nexus_to_interaction = NuGraphBlock(nexus_features,
@@ -173,6 +183,12 @@ class NuGraphCore(nn.Module):
         sp.x = self.checkpoint(
             self.plane_to_nexus, (h.x, sp.x),
             data["hit", "nexus", "sp"].edge_index)
+
+        # optional sp→sp message-passing over the 3D kNN spacepoint graph
+        if self.mess3d:
+            sp.x = self.checkpoint(
+                self.sp_to_sp, sp.x,
+                data["sp", "sp3d", "sp"].edge_index)
 
         # message-passing from nexus to interaction
         evt.x = self.checkpoint(
