@@ -196,7 +196,7 @@ class NuGraphDataModule(LightningDataModule):
                           help='Dataset shuffling scheme to use')
         data.add_argument('--balance-frac', type=float, default=0.1,
                           help='Fraction of dataset to use for workload balancing')
-        data.add_argument('--3dfeatext', action='store_true', default=False,
+        data.add_argument('--input-nexus-feats', action='store_true', default=False,
                           dest='input_nexus_feats',
                           help='Enable real spacepoint input features '
                                '(delta_T, chi2, x, y, z), independent of --3dmesspass')
