@@ -57,6 +57,7 @@ def train(args, Model):
     nudata = Data(args.data_path, batch_size=args.batch_size,
                   model=Model, shuffle=args.shuffle,
                   balance_frac=args.balance_frac, num_workers=args.num_workers,
+                  input_nexus_feats=args.input_nexus_feats, nexus_k=args.nexus_k, mess3d=args.mess3d,
                   featext=args.featext)
 
     if args.resume:

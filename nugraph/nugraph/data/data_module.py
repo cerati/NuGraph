@@ -27,6 +27,9 @@ class NuGraphDataModule(LightningDataModule):
                  num_workers: int = 8,
                  shuffle: str = 'random',
                  balance_frac: float = 0.1,
+                 input_nexus_feats: bool = False,
+                 nexus_k: int = 5,
+                 mess3d: bool = False,
                  featext: bool = False):
         super().__init__()
 
@@ -44,6 +47,9 @@ class NuGraphDataModule(LightningDataModule):
             sys.exit()
         self.shuffle = shuffle
         self.balance_frac = balance_frac
+        self.input_nexus_feats = input_nexus_feats
+        self.nexus_k = nexus_k
+        self.mess3d = mess3d
         self.featext = featext
 
         with h5py.File(self.filename) as f:
@@ -94,7 +100,10 @@ class NuGraphDataModule(LightningDataModule):
 
         transform = []
         if model:
-            transform.append(model.transform(planes=self.planes))
+            transform.append(model.transform(planes=self.planes,
+                                             input_nexus_feats=self.input_nexus_feats,
+                                             nexus_k=self.nexus_k,
+                                             mess3d=self.mess3d))
         if self.featext:
             transform.append(FeatureExtension(planes=self.planes))
         transform = Compose(transform) if transform else None
@@ -187,6 +196,16 @@ class NuGraphDataModule(LightningDataModule):
                           help='Dataset shuffling scheme to use')
         data.add_argument('--balance-frac', type=float, default=0.1,
                           help='Fraction of dataset to use for workload balancing')
+        data.add_argument('--3dfeatext', action='store_true', default=False,
+                          dest='input_nexus_feats',
+                          help='Enable real spacepoint input features '
+                               '(delta_T, chi2, x, y, z), independent of --3dmesspass')
+        data.add_argument('--3dmesspass', action='store_true', default=False,
+                          dest='mess3d',
+                          help='Enable 3D kNN spacepoint graph and message passing over it')
+        data.add_argument('--nexus-k', type=int, default=5,
+                          dest='nexus_k',
+                          help='Number of nearest neighbours for the 3D spacepoint graph')
         data.add_argument('--featext', action='store_true', default=False,
                           help='Enable extended features')
         return parser

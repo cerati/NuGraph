@@ -12,6 +12,7 @@ from .types import Data
 from .transform import Transform
 from .encoder import Encoder
 from .core import NuGraphCore
+from ...util import SpacePointGraph
 from .decoders import (SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder,
                        SpacepointDecoder)
 
@@ -40,12 +41,17 @@ class NuGraph3(LightningModule):
         input_edge_geom: Inject 5 fixed geometric features on hit-hit edges
         instance_edge_pass: Run a dedicated hit-hit post-pass after each main iteration to
             update condensation coordinates using geometric edge features as fixed context
+        mess3d: Add a sp→sp message-passing step over the 3D kNN spacepoint graph
+        nexus_k: Number of nearest neighbours for the 3D spacepoint kNN graph
+        input_nexus_feats: If True, compute spacepoint quality features (delta_T, chi2,
+            x, y, z) from contributing hits and encode them as the initial sp embedding
         use_checkpointing: Whether to use checkpointing
         lr: Learning rate
         no_one_cycle_sched: Whether to disable the OneCycleLR scheduler
     """
     def __init__(self,
                  in_features: int = 4,
+                 input_nexus_feats: bool = False,
                  hit_features: int = 128,
                  nexus_features: int = 32,
                  interaction_features: int = 32,
@@ -63,6 +69,8 @@ class NuGraph3(LightningModule):
                  particle_loss: bool = False,
                  input_edge_geom: bool = False,
                  instance_edge_pass: bool = False,
+                 mess3d: bool = False,
+                 nexus_k: int = 5,
                  use_checkpointing: bool = False,
                  lr: float = 0.001,
                  no_one_cycle_sched: bool = False):
@@ -83,10 +91,13 @@ class NuGraph3(LightningModule):
         self.num_iters = num_iters
         self.lr = lr
         self.no_one_cycle_sched = no_one_cycle_sched
+        self.mess3d = mess3d
+        self.nexus_k = nexus_k
 
         self.encoder = Encoder(in_features, hit_features,
                                nexus_features, interaction_features, instance_features,
-                               input_edge_geom=input_edge_geom)
+                               input_edge_geom=input_edge_geom,
+                               input_nexus_feats=input_nexus_feats)
 
         self.core_net = NuGraphCore(hit_features,
                                     nexus_features,
@@ -94,6 +105,7 @@ class NuGraph3(LightningModule):
                                     instance_features,
                                     input_edge_geom,
                                     instance_edge_pass,
+                                    mess3d,
                                     use_checkpointing)
 
         self.decoders = []
@@ -205,14 +217,23 @@ class NuGraph3(LightningModule):
             return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
 
     @staticmethod
-    def transform(planes: tuple[str]) -> Transform:
+    def transform(planes: tuple[str], input_nexus_feats: bool = False, nexus_k: int = 5,
+                  mess3d: bool = False) -> Transform:
         """
         Return data transform for NuGraph3 model
 
         Args:
             planes: tuple of detector plane names
+            input_nexus_feats: unused here (features are computed in the encoder);
+                kept for API symmetry with mess3d/nexus_k
+            nexus_k: number of nearest neighbours for the 3D spacepoint graph
+            mess3d: whether to build the 3D kNN spacepoint graph
         """
-        return Transform(planes)
+        from torch_geometric.transforms import Compose
+        transforms = [Transform(planes)]
+        if mess3d:
+            transforms.append(SpacePointGraph(nexus_k))
+        return Compose(transforms)
 
     @staticmethod
     def add_model_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -281,6 +302,7 @@ class NuGraph3(LightningModule):
         """
         return cls(
             in_features=args.in_feats,
+            input_nexus_feats=args.input_nexus_feats,
             hit_features=args.hit_feats,
             nexus_features=args.nexus_feats,
             interaction_features=args.interaction_feats,
@@ -298,6 +320,8 @@ class NuGraph3(LightningModule):
             particle_loss=args.particle_loss,
             input_edge_geom=args.input_edge_geom,
             instance_edge_pass=args.instance_edge_pass,
+            mess3d=args.mess3d,
+            nexus_k=args.nexus_k,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate,
             no_one_cycle_sched=args.no_one_cycle_sched)
