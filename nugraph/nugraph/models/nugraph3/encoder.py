@@ -76,20 +76,20 @@ class Encoder(torch.nn.Module):
             distance   = torch.hypot(d_wire, d_time)
             pp.edge_geom = torch.stack([d_integral, d_rms, d_wire, d_time, distance], dim=1)
 
-        data["hit"].x = self.planar_net(x_in)
-        data["hit"].of = self.beta_net(x_in)
-        data["hit"].ox = self.coord_net(x_in)
-
         if self.input_nexus_feats:
             # Compute spacepoint quality features from raw hit inputs via nexus edges.
-            # After NG3 Transform: data["hit"].x cols are [wire, time, integral, rms, plane_idx].
-            # Uses raw (pre-normalisation) values so sp_input_norm sees physical scales.
+            # Must happen before data["hit"].x is overwritten by planar_net so that
+            # columns 1 (drift time) and 3 (rms) still refer to the physical inputs.
+            # Reading raw (non-differentiable) data["hit"].x here also avoids an
+            # autograd version conflict: hit_idx would be saved for backward if we
+            # indexed into a differentiable tensor, and PyG's propagate can later
+            # touch edge_index in-place, incrementing hit_idx's version.
             edge_index = data["hit", "nexus", "sp"].edge_index
             hit_idx, sp_idx = edge_index[0], edge_index[1]
             n_sp = data["sp"].num_nodes
 
-            t_all = data["hit"].x[hit_idx, 1]   # raw drift time
-            s_all = data["hit"].x[hit_idx, 3]   # raw rms
+            t_all = data["hit"].x[hit_idx, 1]   # raw drift time (col 1 after NG3 Transform)
+            s_all = data["hit"].x[hit_idx, 3]   # raw rms     (col 3 after NG3 Transform)
             plane_all = data["hit"].plane[hit_idx]
             n_planes = int(data["hit"].plane.max().item()) + 1
 
@@ -128,6 +128,10 @@ class Encoder(torch.nn.Module):
             data["sp"].x = torch.zeros(data["sp"].num_nodes,
                                        self.nexus_features,
                                        device=data["hit"].x.device)
+
+        data["hit"].x = self.planar_net(x_in)
+        data["hit"].of = self.beta_net(x_in)
+        data["hit"].ox = self.coord_net(x_in)
 
         data["evt"].x = torch.zeros(data["evt"].num_nodes,
                                     self.interaction_features,
