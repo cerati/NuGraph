@@ -16,6 +16,12 @@ class Encoder(torch.nn.Module):
         input_edge_geom: If True, compute 5 fixed geometric features on hit-hit edges
         input_nexus_feats: If True, compute spacepoint quality features (delta_T, chi2, x, y, z)
             from contributing hits and encode them as the initial sp embedding
+        instance_ox_residual: If True, stash the initial (pre-message-passing) condensation
+            coordinates as data["hit"].ox_initial, for the instance decoder's residual shortcut
+        instance_nexus_agg_initial: If True, stash the initial (pre-message-passing) sp
+            embedding as data["sp"].x_initial, for the instance decoder's nexus-aggregation
+            shortcut. Only meaningful when input_nexus_feats is also True — otherwise the
+            stashed value is just zeros.
     """
     def __init__(self,
                  in_features: int,
@@ -24,7 +30,9 @@ class Encoder(torch.nn.Module):
                  interaction_features: int,
                  instance_features: int,
                  input_edge_geom: bool = False,
-                 input_nexus_feats: bool = False):
+                 input_nexus_feats: bool = False,
+                 instance_ox_residual: bool = False,
+                 instance_nexus_agg_initial: bool = False):
         super().__init__()
 
         self.input_norm = InputNorm(in_features)
@@ -46,6 +54,8 @@ class Encoder(torch.nn.Module):
         self.interaction_features = interaction_features
         self.input_edge_geom = input_edge_geom
         self.input_nexus_feats = input_nexus_feats
+        self.instance_ox_residual = instance_ox_residual
+        self.instance_nexus_agg_initial = instance_nexus_agg_initial
 
         # optional spacepoint feature encoder: normalises and encodes
         # [delta_T, chi2, x, y, z] computed on-the-fly in forward()
@@ -124,6 +134,8 @@ class Encoder(torch.nn.Module):
 
             sp_feats = torch.cat([delta_T, chi2, data["sp"].pos], dim=1)
             data["sp"].x = self.sp_net(self.sp_input_norm(sp_feats))
+            if self.instance_nexus_agg_initial:
+                data["sp"].x_initial = data["sp"].x
         else:
             data["sp"].x = torch.zeros(data["sp"].num_nodes,
                                        self.nexus_features,
@@ -132,6 +144,8 @@ class Encoder(torch.nn.Module):
         data["hit"].x = self.planar_net(x_in)
         data["hit"].of = self.beta_net(x_in)
         data["hit"].ox = self.coord_net(x_in)
+        if self.instance_ox_residual:
+            data["hit"].ox_initial = data["hit"].ox
 
         data["evt"].x = torch.zeros(data["evt"].num_nodes,
                                     self.interaction_features,

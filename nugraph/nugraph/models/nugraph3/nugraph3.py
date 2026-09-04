@@ -45,6 +45,13 @@ class NuGraph3(LightningModule):
         nexus_k: Number of nearest neighbours for the 3D spacepoint kNN graph
         input_nexus_feats: If True, compute spacepoint quality features (delta_T, chi2,
             x, y, z) from contributing hits and encode them as the initial sp embedding
+        instance_ox_residual: Add a residual connection from the encoder's initial
+            (pre-message-passing) condensation coordinates to the instance decoder
+        instance_nexus_agg: Mean-aggregate the final (post-message-passing) sp embedding
+            onto hit nodes via nexus edges, as an additional instance decoder residual
+        instance_nexus_agg_initial: Mean-aggregate the initial (pre-message-passing) sp
+            embedding onto hit nodes via nexus edges, as an additional instance decoder
+            residual. Requires input_nexus_feats. May be combined with instance_nexus_agg.
         use_checkpointing: Whether to use checkpointing
         lr: Learning rate
         no_one_cycle_sched: Whether to disable the OneCycleLR scheduler
@@ -71,6 +78,9 @@ class NuGraph3(LightningModule):
                  instance_edge_pass: bool = False,
                  mess3d: bool = False,
                  nexus_k: int = 5,
+                 instance_ox_residual: bool = False,
+                 instance_nexus_agg: bool = False,
+                 instance_nexus_agg_initial: bool = False,
                  use_checkpointing: bool = False,
                  lr: float = 0.001,
                  no_one_cycle_sched: bool = False):
@@ -82,6 +92,14 @@ class NuGraph3(LightningModule):
 
         if instance_edge_pass and not input_edge_geom:
             raise ValueError('--instance-edge-pass requires --edge-geom')
+
+        if (instance_ox_residual or instance_nexus_agg or instance_nexus_agg_initial) \
+                and not instance_head:
+            raise ValueError('--instance-ox-residual, --instance-nexus-agg and '
+                              '--instance-nexus-agg-initial require --instance')
+
+        if instance_nexus_agg_initial and not input_nexus_feats:
+            raise ValueError('--instance-nexus-agg-initial requires --input-nexus-feats')
 
         self.nexus_features = nexus_features
         self.interaction_features = interaction_features
@@ -97,7 +115,9 @@ class NuGraph3(LightningModule):
         self.encoder = Encoder(in_features, hit_features,
                                nexus_features, interaction_features, instance_features,
                                input_edge_geom=input_edge_geom,
-                               input_nexus_feats=input_nexus_feats)
+                               input_nexus_feats=input_nexus_feats,
+                               instance_ox_residual=instance_ox_residual,
+                               instance_nexus_agg_initial=instance_nexus_agg_initial)
 
         self.core_net = NuGraphCore(hit_features,
                                     nexus_features,
@@ -128,7 +148,11 @@ class NuGraph3(LightningModule):
 
         if instance_head:
             self.instance_decoder = InstanceDecoder(hit_features, instance_features,
-                                                    particle_loss)
+                                                    particle_loss,
+                                                    nexus_features=nexus_features,
+                                                    ox_residual=instance_ox_residual,
+                                                    nexus_agg=instance_nexus_agg,
+                                                    nexus_agg_initial=instance_nexus_agg_initial)
             self.decoders.append(self.instance_decoder)
 
         if spacepoint_head:
@@ -279,6 +303,23 @@ class NuGraph3(LightningModule):
                            help='Run a dedicated hit-hit post-pass after each main iteration '
                                 'to update condensation coordinates using geometric edge '
                                 'features as fixed read-only context (requires --edge-geom)')
+        model.add_argument('--instance-ox-residual', action='store_true',
+                           dest="instance_ox_residual",
+                           help='Add a residual connection from the encoder\'s initial '
+                                '(pre-message-passing) condensation coordinates to the '
+                                'instance decoder (requires --instance)')
+        model.add_argument('--instance-nexus-agg', action='store_true',
+                           dest="instance_nexus_agg",
+                           help='Mean-aggregate the final (post-message-passing) sp '
+                                'embedding onto hit nodes via nexus edges, as an additional '
+                                'instance decoder residual (requires --instance)')
+        model.add_argument('--instance-nexus-agg-initial', action='store_true',
+                           dest="instance_nexus_agg_initial",
+                           help='Mean-aggregate the initial (pre-message-passing) sp '
+                                'embedding onto hit nodes via nexus edges, as an additional '
+                                'instance decoder residual (requires --instance and '
+                                '--input-nexus-feats; may be combined with '
+                                '--instance-nexus-agg)')
         model.add_argument('--no-checkpointing', action='store_false',
                            dest="use_checkpointing",
                            help='Disable checkpointing during training')
@@ -322,6 +363,9 @@ class NuGraph3(LightningModule):
             instance_edge_pass=args.instance_edge_pass,
             mess3d=args.mess3d,
             nexus_k=args.nexus_k,
+            instance_ox_residual=args.instance_ox_residual,
+            instance_nexus_agg=args.instance_nexus_agg,
+            instance_nexus_agg_initial=args.instance_nexus_agg_initial,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate,
             no_one_cycle_sched=args.no_one_cycle_sched)

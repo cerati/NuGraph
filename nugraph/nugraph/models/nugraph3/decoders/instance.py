@@ -9,6 +9,14 @@ from torch_geometric.utils import cumsum, unbatch
 from ....util import ObjConLoss, RecallLoss
 from ..types import Data, N_IT, E_H_IT, N_IP, E_H_IP
 
+def _nexus_mean_agg(sp_feat: torch.Tensor, hit_idx: torch.Tensor,
+                    sp_idx: torch.Tensor, num_hits: int) -> torch.Tensor:
+    """Mean-aggregate a per-sp feature tensor onto hit nodes via nexus edges"""
+    agg = sp_feat.new_zeros(num_hits, sp_feat.size(1)).index_add_(0, hit_idx, sp_feat[sp_idx])
+    counts = sp_feat.new_zeros(num_hits).index_add_(
+        0, hit_idx, sp_feat.new_ones(sp_idx.size(0))).clamp(min=1).unsqueeze(1)
+    return agg / counts
+
 class InstanceDecoder(nn.Module):
     """
     NuGraph3 instance decoder module
@@ -19,9 +27,22 @@ class InstanceDecoder(nn.Module):
     Args:
         hit_features: Number of hit node features
         instance_features: Number of instance features
+        nexus_features: Number of nexus (sp) node features, required if nexus_agg or
+            nexus_agg_initial is True
+        ox_residual: If True, add a residual connection from the encoder's initial
+            (pre-message-passing) condensation coordinates (data["hit"].ox_initial)
+        nexus_agg: If True, mean-aggregate the final (post-message-passing) sp
+            embedding onto hit nodes via nexus edges, as an additional residual branch
+        nexus_agg_initial: If True, mean-aggregate the initial (pre-message-passing) sp
+            embedding (data["sp"].x_initial) onto hit nodes via nexus edges, as an
+            additional residual branch. May be combined with nexus_agg.
     """
     def __init__(self, hit_features: int, instance_features: int,
-                 particle_loss: bool = False):
+                 particle_loss: bool = False,
+                 nexus_features: int = None,
+                 ox_residual: bool = False,
+                 nexus_agg: bool = False,
+                 nexus_agg_initial: bool = False):
         super().__init__()
 
         # loss function
@@ -45,6 +66,23 @@ class InstanceDecoder(nn.Module):
             nn.Linear(hit_features, instance_features),
         )
 
+        self.ox_residual = ox_residual
+        self.nexus_agg = nexus_agg
+        self.nexus_agg_initial = nexus_agg_initial
+
+        # optional nexus-aggregation residual branch: reads sp.x and/or sp.x_initial
+        # via nexus edges, as a dedicated path that bypasses the shared h.x pathway
+        n_sources = int(nexus_agg) + int(nexus_agg_initial)
+        if n_sources > 0:
+            self.nexus_coord_net = nn.Sequential(
+                nn.Linear(hit_features + instance_features + n_sources * nexus_features,
+                         hit_features),
+                nn.Mish(),
+                nn.Linear(hit_features, instance_features),
+            )
+        else:
+            self.nexus_coord_net = None
+
         self.dbscan = DBSCAN(eps=0.3, min_samples=15)
         self.particle_loss = particle_loss
 
@@ -63,7 +101,26 @@ class InstanceDecoder(nn.Module):
 
         # run network and add output to graph object
         h.of = self.beta_net(torch.cat((h.x, h.of), dim=1)).squeeze(dim=-1)
-        h.ox = self.coord_net(torch.cat((h.x, h.ox), dim=1))
+
+        ox_in = h.ox
+        if self.ox_residual:
+            ox_in = ox_in + h.ox_initial
+            del h.ox_initial  # transient, created post-batching with no slice_dict entry;
+                               # must not survive into to_data_list() below
+
+        h.ox = self.coord_net(torch.cat((h.x, ox_in), dim=1))
+
+        if self.nexus_agg or self.nexus_agg_initial:
+            sp = data["sp"]
+            hit_idx, sp_idx = data["hit", "nexus", "sp"].edge_index
+            aggs = []
+            if self.nexus_agg:
+                aggs.append(_nexus_mean_agg(sp.x, hit_idx, sp_idx, h.x.size(0)))
+            if self.nexus_agg_initial:
+                aggs.append(_nexus_mean_agg(sp.x_initial, hit_idx, sp_idx, h.x.size(0)))
+                del sp.x_initial  # same transient-attribute concern as ox_initial above
+            h_nexus_agg = torch.cat(aggs, dim=1)
+            h.ox = h.ox + self.nexus_coord_net(torch.cat((h.x, ox_in, h_nexus_agg), dim=1))
 
         if isinstance(data, Batch):
             # pylint: disable=protected-access
