@@ -22,6 +22,10 @@ class Encoder(torch.nn.Module):
             embedding as data["sp"].x_initial, for the instance decoder's nexus-aggregation
             shortcut. Only meaningful when input_nexus_feats is also True — otherwise the
             stashed value is just zeros.
+        sp_nexus_residual: If True, stash the initial (pre-message-passing) sp embedding
+            as data["sp"].x_initial, for NuGraphCore's sp-to-sp residual reinjection.
+            Requires input_nexus_feats. May be combined with instance_nexus_agg_initial
+            (both read the same stashed tensor).
     """
     def __init__(self,
                  in_features: int,
@@ -32,7 +36,8 @@ class Encoder(torch.nn.Module):
                  input_edge_geom: bool = False,
                  input_nexus_feats: bool = False,
                  instance_ox_residual: bool = False,
-                 instance_nexus_agg_initial: bool = False):
+                 instance_nexus_agg_initial: bool = False,
+                 sp_nexus_residual: bool = False):
         super().__init__()
 
         self.input_norm = InputNorm(in_features)
@@ -56,6 +61,7 @@ class Encoder(torch.nn.Module):
         self.input_nexus_feats = input_nexus_feats
         self.instance_ox_residual = instance_ox_residual
         self.instance_nexus_agg_initial = instance_nexus_agg_initial
+        self.sp_nexus_residual = sp_nexus_residual
 
         # optional spacepoint feature encoder: normalises and encodes
         # [delta_T, chi2, x, y, z] computed on-the-fly in forward()
@@ -134,7 +140,7 @@ class Encoder(torch.nn.Module):
 
             sp_feats = torch.cat([delta_T, chi2, data["sp"].pos], dim=1)
             data["sp"].x = self.sp_net(self.sp_input_norm(sp_feats))
-            if self.instance_nexus_agg_initial:
+            if self.instance_nexus_agg_initial or self.sp_nexus_residual:
                 data["sp"].x_initial = data["sp"].x
         else:
             data["sp"].x = torch.zeros(data["sp"].num_nodes,

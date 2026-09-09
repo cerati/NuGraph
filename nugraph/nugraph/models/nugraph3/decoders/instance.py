@@ -118,9 +118,14 @@ class InstanceDecoder(nn.Module):
                 aggs.append(_nexus_mean_agg(sp.x, hit_idx, sp_idx, h.x.size(0)))
             if self.nexus_agg_initial:
                 aggs.append(_nexus_mean_agg(sp.x_initial, hit_idx, sp_idx, h.x.size(0)))
-                del sp.x_initial  # same transient-attribute concern as ox_initial above
             h_nexus_agg = torch.cat(aggs, dim=1)
             h.ox = h.ox + self.nexus_coord_net(torch.cat((h.x, ox_in, h_nexus_agg), dim=1))
+
+        if hasattr(data["sp"], "x_initial"):
+            del data["sp"].x_initial  # transient, created post-batching with no slice_dict
+                                       # entry; must not survive into to_data_list() below.
+                                       # May have been stashed for --sp-nexus-residual's use
+                                       # in core.py rather than read by this decoder at all.
 
         if isinstance(data, Batch):
             # pylint: disable=protected-access

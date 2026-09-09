@@ -122,6 +122,9 @@ class NuGraphCore(nn.Module):
             features as fixed, read-only context. Has no effect if input_edge_geom is False.
         mess3d: If True, add a sp→sp message-passing step over the 3D kNN spacepoint graph,
             after plane_to_nexus and before nexus_to_interaction
+        sp_nexus_residual: If True, reinject the encoder's undiluted initial sp embedding
+            (data["sp"].x_initial) as a residual into sp_to_sp's node input on every
+            iteration, instead of only the already-message-passed sp.x. Requires mess3d.
         use_checkpointing: Whether to use gradient checkpointing
     """
     def __init__(self,
@@ -132,11 +135,13 @@ class NuGraphCore(nn.Module):
                  input_edge_geom: bool = False,
                  instance_edge_pass: bool = False,
                  mess3d: bool = False,
-                 use_checkpointing: bool = True):
+                 use_checkpointing: bool = True,
+                 sp_nexus_residual: bool = False):
         super().__init__()
 
         self.use_checkpointing = use_checkpointing
         self.mess3d = mess3d
+        self.sp_nexus_residual = sp_nexus_residual
 
         # internal planar message-passing; geometric input edge features only on hit-hit edges
         self.plane_net = NuGraphBlock(hit_features, hit_features, 5 if input_edge_geom else 0,
@@ -241,8 +246,9 @@ class NuGraphCore(nn.Module):
 
         # optional sp→sp message-passing over the 3D kNN spacepoint graph
         if self.mess3d:
+            sp_in = sp.x + sp.x_initial if self.sp_nexus_residual else sp.x
             sp.x = self.checkpoint(
-                self.sp_to_sp, sp.x,
+                self.sp_to_sp, sp_in,
                 data["sp", "sp3d", "sp"].edge_index)
 
         # message-passing from nexus to interaction
